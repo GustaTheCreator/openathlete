@@ -9,9 +9,14 @@ import { API_URL, WEB_URL } from './env';
  * request context shares its cookie jar with the page; no JWT enters storage.
  */
 export async function signIn(page: Page, athlete: TestAthlete) {
+  // Give each simulated browser its own refresh-rate budget across navigations.
+  const clientIp = randomClientIp();
+  const headers = apiHeaders(clientIp);
+  await page.setExtraHTTPHeaders(headers);
+
   const response = await page.request.post(`${API_URL}/auth/login`, {
     headers: {
-      ...apiHeaders(randomClientIp()),
+      ...headers,
       Origin: WEB_URL,
       'X-Auth-Mode': 'cookie',
     },

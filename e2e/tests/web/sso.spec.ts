@@ -24,7 +24,11 @@ async function refreshCookie(page: Page) {
 test('creates the account on a first sign-in', async ({ page }) => {
   await signInWithSso(page, `sso-${randomUUID()}@example.com`);
   // A new account starts with the onboarding
-  await page.waitForURL(/\/dashboard|\/onboarding/);
+  await page.waitForURL(/\/dashboard\/onboarding/);
+  await expect(
+    page.getByRole('heading', { name: 'Welcome to OpenAthlete!' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Get Started' }).click();
   await expect(page.getByText('What describes you best?')).toBeVisible();
   expect(
     await page.evaluate(() => [

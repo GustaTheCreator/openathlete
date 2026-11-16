@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { test as authTest } from '../../support/authenticated-test';
 import { WEB_URL } from '../../support/env';
 
 // Paraglide reads the locale from its cookie before rendering
@@ -10,7 +11,7 @@ for (const [locale, calendar] of [
   ['es', 'Calendario'],
   ['pt-BR', 'Calendário'],
 ]) {
-  test(`renders the dashboard in ${locale}`, async ({ page, context }) => {
+  authTest(`renders the dashboard in ${locale}`, async ({ page, context }) => {
     await context.addCookies([
       { name: 'OA_LOCALE', value: locale, url: WEB_URL },
     ]);
