@@ -9,8 +9,9 @@ vi.mock('@/paraglide/messages', () => ({
   m: { footer_privacy: () => 'Privacy', footer_source: () => 'Source code' },
 }));
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+(
+  globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('Instance footer', () => {
   let container: HTMLDivElement;
