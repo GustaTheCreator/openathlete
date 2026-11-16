@@ -1,0 +1,226 @@
+name: Tourmalet release
+
+on:
+  push:
+    tags: ['tourmalet-v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tourmalet-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Fetch stable branch
+        run: git fetch origin tourmalet:refs/remotes/origin/tourmalet
+      - name: Validate tag and release ancestry
+        run: python scripts/release.py check --tag "$GITHUB_REF_NAME" --revision "$GITHUB_SHA" --main-ref origin/tourmalet
+      - id: version
+        name: Read release version
+        run: echo "value=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+      - name: Reject existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" --json tagName >/dev/null 2>&1; then
+            echo "A GitHub release already exists for $TAG" >&2
+            exit 1
+          fi
+
+  verify:
+    name: CI for tagged commit
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build and publish Tourmalet images
+    needs: [validate, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      api-digest: ${{ steps.api.outputs.digest }}
+      web-digest: ${{ steps.web.outputs.digest }}
+    env:
+      REGISTRY: ghcr.io/gustathecreator
+      VERSION: ${{ needs.validate.outputs.version }}
+      REVISION: ${{ github.sha }}
+      OCI_SOURCE: https://github.com/GustaTheCreator/openathlete
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Reject reused image version tags
+        run: |
+          for image in api web; do
+            for tag in "$VERSION" "sha-$REVISION"; do
+              if docker buildx imagetools inspect "$REGISTRY/openathlete-$image:$tag" >/dev/null 2>&1; then
+                echo "Image tag $tag already exists for $image" >&2
+                exit 1
+              fi
+            done
+          done
+
+      - id: api
+        name: Build and publish API image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/gustathecreator/openathlete-api:${{ needs.validate.outputs.version }}
+            ghcr.io/gustathecreator/openathlete-api:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/GustaTheCreator/openathlete
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.validate.outputs.version }}
+          cache-from: type=gha,scope=tourmalet-api
+          cache-to: type=gha,mode=max,scope=tourmalet-api
+
+      - id: web
+        name: Build and publish web image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/gustathecreator/openathlete-web:${{ needs.validate.outputs.version }}
+            ghcr.io/gustathecreator/openathlete-web:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/GustaTheCreator/openathlete
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.validate.outputs.version }}
+          build-args: |
+            VITE_SOURCE_CODE_URL=https://github.com/GustaTheCreator/openathlete/tree/${{ github.ref_name }}
+          cache-from: type=gha,scope=tourmalet-web
+          cache-to: type=gha,mode=max,scope=tourmalet-web
+
+  smoke:
+    name: Smoke test published image digests
+    needs: [validate, verify, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      API_IMAGE: ghcr.io/gustathecreator/openathlete-api@${{ needs.build.outputs.api-digest }}
+      WEB_IMAGE: ghcr.io/gustathecreator/openathlete-web@${{ needs.build.outputs.web-digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout@v7
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure the E2E stack to use the published digests
+        run: |
+          cat > "$RUNNER_TEMP/release-smoke.override.yml" <<EOF
+          services:
+            api:
+              image: ${API_IMAGE}
+              build: null
+            worker:
+              image: ${API_IMAGE}
+              build: null
+            web:
+              image: ${WEB_IMAGE}
+              build: null
+          EOF
+
+      - name: Start the release image stack
+        run: docker compose -f e2e/docker-compose.yml -f "$RUNNER_TEMP/release-smoke.override.yml" up -d --no-build --wait
+
+      - uses: pnpm/action-setup@f53f5227a9e83886ab598c617f3c170fab62f0d3 # pnpm/action-setup@v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile --filter @openathlete/e2e...
+      - run: pnpm e2e exec playwright install --with-deps chromium
+      - run: pnpm e2e test:e2e
+
+      - name: Release image logs
+        if: failure()
+        run: docker compose -f e2e/docker-compose.yml -f "$RUNNER_TEMP/release-smoke.override.yml" logs --no-color api worker web
+
+      - name: Stop the release image stack
+        if: always()
+        run: docker compose -f e2e/docker-compose.yml -f "$RUNNER_TEMP/release-smoke.override.yml" down -v
+
+  publish-release:
+    name: Publish source and release manifest
+    needs: [validate, verify, build, smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Create source archive
+        id: source
+        env:
+          TAG: ${{ github.ref_name }}
+          REVISION: ${{ github.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          output=$(python scripts/release.py source --tag "$TAG" --revision "$REVISION" --output-dir "$RUNNER_TEMP/release-assets")
+          archive=$(printf '%s\n' "$output" | head -n 1)
+          digest=$(printf '%s\n' "$output" | tail -n 1)
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "sha256=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Create release manifest
+        env:
+          TAG: ${{ github.ref_name }}
+          REVISION: ${{ github.sha }}
+          API_DIGEST: ${{ needs.build.outputs.api-digest }}
+          WEB_DIGEST: ${{ needs.build.outputs.web-digest }}
+          SOURCE_SHA256: ${{ steps.source.outputs.sha256 }}
+        run: |
+          python scripts/release.py manifest \
+            --tag "$TAG" \
+            --revision "$REVISION" \
+            --migration-tree "$(git rev-parse "$REVISION:libs/database/prisma/schema/migrations")" \
+            --api-digest "${API_DIGEST#sha256:}" \
+            --web-digest "${WEB_DIGEST#sha256:}" \
+            --source-sha256 "$SOURCE_SHA256" \
+            --output "$RUNNER_TEMP/release-assets/tourmalet-release.json"
+
+      - name: Create draft, upload verified assets, and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          SOURCE_ARCHIVE: ${{ steps.source.outputs.archive }}
+        run: |
+          gh release create "$TAG" --draft --verify-tag --generate-notes
+          gh release upload "$TAG" "$SOURCE_ARCHIVE" "$RUNNER_TEMP/release-assets/tourmalet-release.json"
+          gh release edit "$TAG" --draft=false

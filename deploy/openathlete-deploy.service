@@ -1,0 +1,8 @@
+[Unit]
+Description=Check and deploy an approved OpenAthlete release
+After=docker.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=30min
+ExecStart=/usr/bin/python3 %h/.local/lib/openathlete-deploy/deployer.py --config %h/.config/openathlete-deploy/config.json deploy

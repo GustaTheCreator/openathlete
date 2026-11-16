@@ -69,3 +69,5 @@ backups/
 *.p12
 *.pfx
 *.key
+__pycache__/
+/.deploy/

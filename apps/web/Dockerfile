@@ -31,6 +31,8 @@ RUN pnpm build
 # image works for any deployment.
 ARG VITE_API_BASE_URL="__OPENATHLETE_API_BASE_URL__"
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ARG VITE_SOURCE_CODE_URL="https://github.com/GustaTheCreator/openathlete/tree/tourmalet-2026.11.16.1"
+ENV VITE_SOURCE_CODE_URL=$VITE_SOURCE_CODE_URL
 
 WORKDIR /app/apps/web
 RUN pnpm build

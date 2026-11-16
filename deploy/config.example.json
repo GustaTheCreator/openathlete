@@ -1,0 +1,14 @@
+{
+  "root": "/srv/openathlete",
+  "repository": "GustaTheCreator/openathlete",
+  "composeFiles": [
+    "docker-compose.yml",
+    "docker-compose.override.yml"
+  ],
+  "project": "openathlete",
+  "postgresService": "postgres",
+  "allowedMigrationTrees": [
+    "REPLACE_WITH_APPROVED_MIGRATION_TREE_HASH"
+  ],
+  "healthTimeoutSeconds": 90
+}
