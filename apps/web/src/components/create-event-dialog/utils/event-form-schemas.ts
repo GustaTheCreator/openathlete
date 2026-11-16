@@ -14,7 +14,7 @@ export const baseEventFormSchema = z.object({
     .transform((val) => (val instanceof Date ? val : new Date(val)))
     .pipe(
       z.date({
-        required_error: m.required(),
+        error: m.required(),
       }),
     )
     .optional(),
@@ -23,7 +23,7 @@ export const baseEventFormSchema = z.object({
     .transform((val) => (val instanceof Date ? val : new Date(val)))
     .pipe(
       z.date({
-        required_error: m.required(),
+        error: m.required(),
       }),
     )
     .optional(),
@@ -38,8 +38,8 @@ export const baseEventFormSchema = z.object({
 // Training event schema
 export const trainingEventFormSchema = baseEventFormSchema.extend({
   type: z.literal(EVENT_TYPE.TRAINING),
-  sport: z.nativeEnum(SPORT_TYPE, {
-    required_error: m.required(),
+  sport: z.enum(SPORT_TYPE, {
+    error: m.required(),
   }),
   description: z.string(),
   goalDistance: z.number().optional().nullable(),
@@ -51,15 +51,15 @@ export const trainingEventFormSchema = baseEventFormSchema.extend({
 // Competition event schema
 export const competitionEventFormSchema = baseEventFormSchema.extend({
   type: z.literal(EVENT_TYPE.COMPETITION),
-  sport: z.nativeEnum(SPORT_TYPE, {
-    required_error: m.required(),
+  sport: z.enum(SPORT_TYPE, {
+    error: m.required(),
   }),
   description: z.string(),
   goalDistance: z.number().optional().nullable(),
   goalDuration: z.number().optional().nullable(),
   goalElevationGain: z.number().optional().nullable(),
   goalRpe: z.number().optional().nullable(),
-  priority: z.nativeEnum(COMPETITION_PRIORITY).optional().nullable(),
+  priority: z.enum(COMPETITION_PRIORITY).optional().nullable(),
 });
 
 // Note event schema
@@ -71,8 +71,8 @@ export const noteEventFormSchema = baseEventFormSchema.extend({
 // Activity event schema
 export const activityEventFormSchema = baseEventFormSchema.extend({
   type: z.literal(EVENT_TYPE.ACTIVITY),
-  sport: z.nativeEnum(SPORT_TYPE, {
-    required_error: m.required(),
+  sport: z.enum(SPORT_TYPE, {
+    error: m.required(),
   }),
   description: z.string().optional(),
   rpe: z.number().optional().nullable(),
@@ -93,7 +93,8 @@ export const eventFormSchema = z.discriminatedUnion('type', [
   activityEventFormSchema,
 ]);
 
-export type EventFormValues = z.infer<typeof eventFormSchema>;
+export type EventFormInput = z.input<typeof eventFormSchema>;
+export type EventFormValues = z.output<typeof eventFormSchema>;
 
 /** The equipment select's value for an activity without equipment */
 export const NO_EQUIPMENT = 'none';

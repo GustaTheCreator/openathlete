@@ -5,6 +5,8 @@ import { Athlete, CoachAthlete, User } from '@openathlete/database';
 export type AuthUser = Pick<User, 'userId' | 'email'> & {
   athlete: Pick<Athlete, 'athleteId'> | null;
   coachAthletes?: Array<Pick<CoachAthlete, 'athleteId'>>;
+  authSessionId?: string;
+  roles?: User['roles'];
 };
 
 export const JwtUser = createParamDecorator(

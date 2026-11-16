@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -13,7 +14,7 @@ import { BadRequestException as BadRequestException2 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
-import { InvitationStatus } from '@openathlete/database';
+import { InvitationStatus, UserRole } from '@openathlete/database';
 import { ApiEnvSchemaType } from '@openathlete/shared';
 
 import { SendEmailEvent } from 'src/events';
@@ -68,11 +69,24 @@ export class CoachInvitationService {
         firstName: true,
         lastName: true,
         language: true,
+        roles: true,
+        onboardingCompleted: true,
       },
     });
 
     if (!athleteUser) {
       throw new NotFoundException('Athlete not found');
+    }
+
+    if (!athleteUser.onboardingCompleted) {
+      throw new ForbiddenException('Complete onboarding before inviting');
+    }
+
+    if (
+      !Array.isArray(athleteUser.roles) ||
+      !athleteUser.roles.includes(UserRole.COACH)
+    ) {
+      throw new ForbiddenException('Only coaches can send invitations');
     }
 
     if (athleteUser.email.toLowerCase() === normalizedEmail) {
@@ -307,7 +321,7 @@ export class CoachInvitationService {
   private async coach(coachUserId: number) {
     const coach = await this.prisma.user.findUnique({
       where: { userId: coachUserId },
-      select: { userId: true, email: true },
+      select: { userId: true, email: true, roles: true },
     });
     if (!coach) throw new NotFoundException('User not found');
     return coach;
@@ -322,7 +336,8 @@ export class CoachInvitationService {
       throw new NotFoundException('Invitation not found');
     }
 
-    if (!isFor(invitation, await this.coach(coachUserId))) {
+    const coach = await this.coach(coachUserId);
+    if (!isFor(invitation, coach)) {
       throw new BadRequestException('This invitation is not for you');
     }
 
@@ -366,6 +381,12 @@ export class CoachInvitationService {
           userId: coachUserId,
         },
       });
+      if (!coach.roles.includes(UserRole.COACH)) {
+        await tx.user.update({
+          where: { userId: coachUserId },
+          data: { roles: { push: UserRole.COACH } },
+        });
+      }
     });
     await this.reportLinked(coachUserId, athlete.athleteId);
   }

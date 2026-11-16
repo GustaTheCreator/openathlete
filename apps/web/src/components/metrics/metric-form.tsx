@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Calculator } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { z } from 'zod';
 
 import {
   CreateMetricDto,
@@ -43,7 +44,11 @@ export function MetricForm({
   lockDate = false,
   isLoading,
 }: MetricFormProps) {
-  const methods = useForm<CreateMetricDto>({
+  const methods = useForm<
+    z.input<typeof createMetricDtoSchema>,
+    unknown,
+    CreateMetricDto
+  >({
     resolver: zodResolver(createMetricDtoSchema),
     defaultValues: {
       type: defaultValues?.type || METRIC_TYPE.WEIGHT,

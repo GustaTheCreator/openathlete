@@ -48,7 +48,7 @@ export interface StrengthExercise {
   name: string;
   sets: StrengthSet[];
   tempo: string | null;
-  side: EXERCISE_SIDE | null;
+  side: `${EXERCISE_SIDE}` | null;
   notes: string | null;
 }
 

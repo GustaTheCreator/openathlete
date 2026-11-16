@@ -340,7 +340,7 @@ export const registerLoadTools: ToolRegistrar = (server, ctx, deps) => {
       inputSchema: {
         athleteId: athleteIdInput,
         types: z
-          .array(z.nativeEnum(MetricType))
+          .array(z.enum(MetricType))
           .min(1)
           .max(10)
           .describe(
@@ -397,7 +397,7 @@ export const registerLoadTools: ToolRegistrar = (server, ctx, deps) => {
         'Over a period and for one sport, the same figures as the statistics page: median vertical speed by percent of slope, median heart rate by speed or power, and how output and heart rate drift by length of outing. Bins need three activities. Use them to set climbing paces and to judge long efforts; they describe the athlete and rank nobody.',
       inputSchema: {
         athleteId: athleteIdInput,
-        sport: z.nativeEnum(SportType),
+        sport: z.enum(SportType),
         from: localDate.optional().describe('First day; default a year ago'),
         to: localDate.optional().describe('Last day; default today'),
       },

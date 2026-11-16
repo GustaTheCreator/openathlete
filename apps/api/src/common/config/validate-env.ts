@@ -20,7 +20,7 @@ export function validateEnv(config: Record<string, unknown>): ApiEnvSchemaType {
 
   const result = ApiEnvSchema.safeParse(withoutEmpty);
   if (!result.success) {
-    const errors = result.error.errors.map(
+    const errors = result.error.issues.map(
       (err) => `  - ${err.path.join('.')}: ${err.message}`,
     );
     throw new Error(

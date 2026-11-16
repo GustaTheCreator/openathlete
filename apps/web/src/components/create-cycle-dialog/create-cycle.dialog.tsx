@@ -37,7 +37,7 @@ const cycleFormSchema = z.object({
   startDate: z.string(),
   endDate: z.string(),
   color: z.string().optional(),
-  kind: z.nativeEnum(CYCLE_KIND),
+  kind: z.enum(CYCLE_KIND),
 });
 
 type CycleFormValues = z.infer<typeof cycleFormSchema>;

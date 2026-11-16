@@ -13,6 +13,7 @@ import { AuthService, CaslAbilityFactory, UserService } from './services';
 import { AccountDeletionService } from './services/account-deletion.service';
 import { AccountExportService } from './services/account-export.service';
 import { AthleteInvitationService } from './services/athlete-invitation.service';
+import { AuthCookieService } from './services/auth-cookie.service';
 import { CoachInvitationService } from './services/coach-invitation.service';
 import { FirebaseAuthService } from './services/firebase-auth.service';
 import { InvitationService } from './services/invitation.service';
@@ -33,6 +34,7 @@ import { JwtStrategy } from './strategies';
   ],
   controllers: [AuthController, OidcController, UserController],
   providers: [
+    AuthCookieService,
     AuthService,
     FirebaseAuthService,
     UserService,
@@ -48,6 +50,7 @@ import { JwtStrategy } from './strategies';
     UserTypeGuard,
   ],
   exports: [
+    AuthService,
     CaslAbilityFactory,
     UserService,
     JwtModule,

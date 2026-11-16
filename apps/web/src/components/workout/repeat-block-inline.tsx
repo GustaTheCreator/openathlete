@@ -30,6 +30,7 @@ import { GripVertical, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import {
+  type CreateWorkoutStepDto,
   type SPORT_TYPE,
   type StepZoneLike,
   type WorkoutStepDto as WorkoutStep,
@@ -47,7 +48,7 @@ interface RepeatBlockInlineProps {
   onDelete: (stepId: number) => void;
   onAddChildStep: (
     parentStepId: number,
-    childStep: Omit<WorkoutStep, 'workoutStepId'>,
+    childStep: CreateWorkoutStepDto,
   ) => void;
   onEditChildStep: (parentStepId: number, childStep: WorkoutStep) => void;
   onDeleteChildStep: (parentStepId: number, childStepId: number) => void;
@@ -83,7 +84,7 @@ function SortableChildStep({
     transition,
     isDragging,
   } = useSortable({
-    id: stepId,
+    id: stepId ?? `missing-${index}`,
     disabled: false,
   });
 
@@ -269,20 +270,24 @@ export function RepeatBlockInline({
     setIsStepDialogOpen(true);
   };
 
-  const handleStepSubmit = (childStep: Omit<WorkoutStep, 'workoutStepId'>) => {
+  const handleStepSubmit = (childStep: CreateWorkoutStepDto) => {
     // Strict check: we're editing if editingChildStep exists AND has a valid ID
-    const isEditing =
-      editingChildStep != null &&
-      editingChildStep.workoutStepId != null &&
-      editingChildStep.workoutStepId !== undefined;
-
-    if (isEditing) {
+    const editingId = editingChildStep?.workoutStepId;
+    if (editingId !== null && editingId !== undefined) {
       // EDIT MODE: Update existing step
       onEditChildStep(step.workoutStepId!, {
-        ...childStep,
-        workoutStepId: editingChildStep.workoutStepId!,
-        orderIndex: editingChildStep.orderIndex ?? 0,
-      } as WorkoutStep);
+        workoutStepId: editingId,
+        orderIndex: editingChildStep?.orderIndex ?? 0,
+        stepType: childStep.stepType,
+        durationType: childStep.durationType ?? 'OPEN',
+        name: childStep.name ?? null,
+        durationValue: childStep.durationValue ?? null,
+        notes: childStep.notes ?? null,
+        exerciseRef: childStep.exerciseRef ?? null,
+        tempo: childStep.tempo ?? null,
+        side: childStep.side ?? null,
+        targets: childStep.targets ?? [],
+      });
     } else {
       // ADD MODE: Create new step
       onAddChildStep(step.workoutStepId!, childStep);

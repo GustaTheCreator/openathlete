@@ -1,5 +1,20 @@
 services:
+  api:
+    image: openathlete-api:tourmalet-2026.11.16
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
   web:
+    image: openathlete-web:tourmalet-2026.11.16
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
     volumes:
-      - ./selfhost/41-source-link.sh:/docker-entrypoint.d/41-source-link.sh:ro
-      - ./public-source/openathlete-wahoo-a11ee107209c.tar.gz:/usr/share/nginx/html/source/openathlete-wahoo-a11ee107209c.tar.gz:ro
+      - type: bind
+        source: ./public-privacy
+        target: /usr/share/nginx/html/privacidade
+        read_only: true
+        bind:
+          create_host_path: false

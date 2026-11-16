@@ -2,8 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import {
   AiTask,
-  WorkoutStepDto,
-  WorkoutStepTarget,
+  CreateWorkoutStepDto,
   trainingEventSchema,
 } from '@openathlete/shared';
 
@@ -64,35 +63,33 @@ export class EventModificationService {
       goalRpe: eventData.goalRpe || undefined,
       workout: workoutForPrompt
         ? {
-            steps: workoutForPrompt.steps.map((step: WorkoutStepDto) => {
+            steps: workoutForPrompt.steps.map((step: CreateWorkoutStepDto) => {
               const baseStep = {
                 stepType: step.stepType,
                 name: step.name || undefined,
                 durationType: step.durationType || undefined,
                 durationValue: step.durationValue || undefined,
                 notes: step.notes || undefined,
-                targets: (step.targets || []).map(
-                  (target: WorkoutStepTarget) => {
-                    if (typeof target === 'object' && target !== null) {
-                      if (target.targetType) {
-                        return {
-                          targetType: target.targetType,
-                          targetMin: target.targetMin ?? undefined,
-                          targetMax: target.targetMax ?? undefined,
-                          targetValue: target.targetValue ?? undefined,
-                        };
-                      }
-                      const entries = Object.entries(target);
-                      if (entries.length > 0) {
-                        return {
-                          targetType: entries[0][0],
-                          targetValue: entries[0][1] as number,
-                        };
-                      }
+                targets: (step.targets || []).map((target) => {
+                  if (typeof target === 'object' && target !== null) {
+                    if (target.targetType) {
+                      return {
+                        targetType: target.targetType,
+                        targetMin: target.targetMin ?? undefined,
+                        targetMax: target.targetMax ?? undefined,
+                        targetValue: target.targetValue ?? undefined,
+                      };
                     }
-                    return {};
-                  },
-                ),
+                    const entries = Object.entries(target);
+                    if (entries.length > 0) {
+                      return {
+                        targetType: entries[0][0],
+                        targetValue: entries[0][1] as number,
+                      };
+                    }
+                  }
+                  return {};
+                }),
               };
 
               if (step.repeatBlock) {
@@ -102,38 +99,36 @@ export class EventModificationService {
                     ? {
                         repetitions: step.repeatBlock.repetitions,
                         childSteps: step.repeatBlock.childSteps.map(
-                          (childStep: WorkoutStepDto) => ({
+                          (childStep: CreateWorkoutStepDto) => ({
                             stepType: childStep.stepType,
                             name: childStep.name || undefined,
                             durationType: childStep.durationType || undefined,
                             durationValue: childStep.durationValue || undefined,
                             notes: childStep.notes || undefined,
-                            targets: (childStep.targets || []).map(
-                              (target: WorkoutStepTarget) => {
-                                if (
-                                  typeof target === 'object' &&
-                                  target !== null
-                                ) {
-                                  if (target.targetType) {
-                                    return {
-                                      targetType: target.targetType,
-                                      targetMin: target.targetMin ?? undefined,
-                                      targetMax: target.targetMax ?? undefined,
-                                      targetValue:
-                                        target.targetValue ?? undefined,
-                                    };
-                                  }
-                                  const entries = Object.entries(target);
-                                  if (entries.length > 0) {
-                                    return {
-                                      targetType: entries[0][0],
-                                      targetValue: entries[0][1] as number,
-                                    };
-                                  }
+                            targets: (childStep.targets || []).map((target) => {
+                              if (
+                                typeof target === 'object' &&
+                                target !== null
+                              ) {
+                                if (target.targetType) {
+                                  return {
+                                    targetType: target.targetType,
+                                    targetMin: target.targetMin ?? undefined,
+                                    targetMax: target.targetMax ?? undefined,
+                                    targetValue:
+                                      target.targetValue ?? undefined,
+                                  };
                                 }
-                                return {};
-                              },
-                            ),
+                                const entries = Object.entries(target);
+                                if (entries.length > 0) {
+                                  return {
+                                    targetType: entries[0][0],
+                                    targetValue: entries[0][1] as number,
+                                  };
+                                }
+                              }
+                              return {};
+                            }),
                           }),
                         ),
                       }

@@ -1,11 +1,10 @@
-import { getAccessToken } from '@/utils/auth';
+import { clearAuthTokens, getAccessToken } from '@/utils/auth';
 import { QueryClient } from '@tanstack/react-query';
 import axios, { isAxiosError } from 'axios';
 
 import { ConnectorProvider, Event } from '@openathlete/shared';
 
 import { getApiBaseUrl } from './capacitor';
-import { ACCESS_TOKEN, REFRESH_TOKEN, setItem } from './local-storage';
 
 export const routes = {
   auth: {
@@ -14,6 +13,7 @@ export const routes = {
     oidc: '/auth/oidc',
     oidcExchange: '/auth/oidc/exchange',
     refreshToken: '/auth/refresh-token',
+    logout: '/auth/logout',
     verifyInvitation: '/auth/invitation',
   },
   user: {
@@ -298,11 +298,15 @@ export const isNetworkError = (error: unknown) =>
 
 client.interceptors.request.use(async (config) => {
   config.baseURL = getApiBaseUrl();
-  const token = await getAccessToken();
-  if (token?.refreshToken) {
-    setItem(REFRESH_TOKEN, token.refreshToken);
-    setItem(ACCESS_TOKEN, token.accessToken);
+  const publicAuthRoutes: string[] = [
+    routes.auth.login,
+    routes.auth.firebaseLogin,
+    routes.auth.oidcExchange,
+  ];
+  if (publicAuthRoutes.includes(config.url ?? '')) {
+    return config;
   }
+  const token = await getAccessToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token.accessToken}`;
   }
@@ -311,8 +315,7 @@ client.interceptors.request.use(async (config) => {
 
 client.interceptors.response.use(undefined, async (error) => {
   if (isAxiosError(error) && error.response?.status === 401) {
-    localStorage.removeItem(ACCESS_TOKEN);
-    localStorage.removeItem(REFRESH_TOKEN);
+    clearAuthTokens();
     const queryClient = new QueryClient();
     queryClient.clear();
   }

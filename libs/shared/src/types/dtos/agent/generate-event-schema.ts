@@ -20,7 +20,7 @@ const baseEventSchema = z.object({
 });
 
 const workoutStepTargetSchema = z.object({
-  targetType: z.nativeEnum(WORKOUT_TARGET_TYPE),
+  targetType: z.enum(WORKOUT_TARGET_TYPE),
   targetMin: z.number().optional(),
   targetMax: z.number().optional(),
   targetValue: z.number().optional(),
@@ -35,9 +35,9 @@ const workoutStepTargetSchema = z.object({
 // Simplified workout step - completely flat, no recursion at all
 // For REPEAT blocks, we'll use a simple array structure that can be transformed later
 const workoutStepSchema = z.object({
-  stepType: z.nativeEnum(WORKOUT_STEP_TYPE),
+  stepType: z.enum(WORKOUT_STEP_TYPE),
   name: z.string().optional(),
-  durationType: z.nativeEnum(WORKOUT_DURATION_TYPE).optional(),
+  durationType: z.enum(WORKOUT_DURATION_TYPE).optional(),
   durationValue: z.number().optional(),
   notes: z.string().optional(),
   targets: z.array(workoutStepTargetSchema).default([]),
@@ -54,7 +54,7 @@ const workoutStepSchema = z.object({
 
 const trainingEventSchema = baseEventSchema.extend({
   type: z.literal(EVENT_TYPE.TRAINING),
-  sport: z.nativeEnum(SPORT_TYPE),
+  sport: z.enum(SPORT_TYPE),
   description: z.string(),
   goalDistance: z.number().optional(),
   goalDuration: z.number().optional(),
@@ -69,7 +69,7 @@ const trainingEventSchema = baseEventSchema.extend({
 
 const competitionEventSchema = baseEventSchema.extend({
   type: z.literal(EVENT_TYPE.COMPETITION),
-  sport: z.nativeEnum(SPORT_TYPE),
+  sport: z.enum(SPORT_TYPE),
   description: z.string(),
   goalDistance: z.number().optional(),
   goalDuration: z.number().optional(),
@@ -84,7 +84,7 @@ const noteEventSchema = baseEventSchema.extend({
 
 const activityEventSchema = baseEventSchema.extend({
   type: z.literal(EVENT_TYPE.ACTIVITY),
-  sport: z.nativeEnum(SPORT_TYPE),
+  sport: z.enum(SPORT_TYPE),
   description: z.string().optional(),
   rpe: z.number().optional(),
 });

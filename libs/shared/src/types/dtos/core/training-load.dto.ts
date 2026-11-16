@@ -9,7 +9,7 @@ export const trainingLoadEntrySchema = z.object({
   date: z.coerce.date(),
   value: z.number(),
   metadata: z.object({
-    calculationType: z.nativeEnum(TRAINING_LOAD_CALCULATION_TYPE),
+    calculationType: z.enum(TRAINING_LOAD_CALCULATION_TYPE),
     rpe: z.number().optional(),
     duration: z.number().optional(),
     avgHr: z.number().optional(),
@@ -66,7 +66,7 @@ export const trainingLoadHistorySchema = z.object({
 export type TrainingLoadHistory = z.infer<typeof trainingLoadHistorySchema>;
 
 export const calculateActivityLoadDtoSchema = z.object({
-  calculationType: z.nativeEnum(TRAINING_LOAD_CALCULATION_TYPE),
+  calculationType: z.enum(TRAINING_LOAD_CALCULATION_TYPE),
 });
 
 export type CalculateActivityLoadDto = z.infer<
@@ -74,7 +74,7 @@ export type CalculateActivityLoadDto = z.infer<
 >;
 
 export const recalculateAllLoadsDtoSchema = z.object({
-  calculationType: z.nativeEnum(TRAINING_LOAD_CALCULATION_TYPE),
+  calculationType: z.enum(TRAINING_LOAD_CALCULATION_TYPE),
 });
 
 export type RecalculateAllLoadsDto = z.infer<

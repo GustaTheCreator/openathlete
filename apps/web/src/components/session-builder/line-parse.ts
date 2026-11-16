@@ -1,6 +1,7 @@
 import type {
   CreateWorkoutStepDto,
   CreateWorkoutStepTarget,
+  WorkoutStepType,
   WorkoutTextIssue,
 } from '@openathlete/shared';
 import {
@@ -20,7 +21,7 @@ import type { BuilderEnv } from './use-builder-env';
 export function parseLines(
   text: string,
   env: BuilderEnv,
-  stepType?: WORKOUT_STEP_TYPE,
+  stepType?: WorkoutStepType,
 ): { steps: CreateWorkoutStepDto[]; issues: WorkoutTextIssue[] } {
   return parseWorkoutText(text, {
     sport: env.sport,
@@ -33,7 +34,7 @@ export function parseLines(
 export function parseLine(
   text: string,
   env: BuilderEnv,
-  stepType: WORKOUT_STEP_TYPE,
+  stepType: WorkoutStepType,
 ) {
   const result = parseLines(`- ${text}`, env, stepType);
   const errors = result.issues.filter((issue) => issue.severity === 'error');

@@ -6,6 +6,12 @@ declare module 'jsonwebtoken' {
     type: string;
     iat?: number;
     exp?: number;
+    iss?: string;
+    aud?: string | string[];
+    jti?: string;
+    sessionId?: string;
+    sessionVersion?: number;
+    tokenType?: 'access' | 'refresh';
   }
 
   export function sign(
@@ -14,6 +20,8 @@ declare module 'jsonwebtoken' {
     options?: {
       expiresIn?: string | number;
       algorithm?: string;
+      issuer?: string;
+      audience?: string;
     },
   ): string;
 
@@ -22,6 +30,8 @@ declare module 'jsonwebtoken' {
     secretOrPublicKey: string | Buffer,
     options?: {
       algorithms?: string[];
+      issuer?: string;
+      audience?: string;
     },
   ): JwtPayload;
 }

@@ -250,6 +250,11 @@ export class UserService {
         throw new BadRequestException('INVITATION_EMAIL_MISMATCH');
       }
     }
+
+    return {
+      athlete: Boolean(invitations[0]),
+      coach: Boolean(invitations[1]),
+    };
   }
 
   public createAccount = async (
@@ -267,7 +272,7 @@ export class UserService {
   ) => {
     await this.assertSignupAllowed(invitationToken, coachInvitationToken);
     const normalizedEmail = email.toLowerCase();
-    await this.assertInvitationsUsable(
+    const invitationGrants = await this.assertInvitationsUsable(
       normalizedEmail,
       { invitationToken, coachInvitationToken },
       emailFromProvider,
@@ -337,7 +342,13 @@ export class UserService {
           language,
           // Ticked by the person on the form, never by default
           emailNewsConsentAt: emailNews ? new Date() : null,
-          roles: [UserRole.ATHLETE, UserRole.COACH],
+          roles:
+            invitationToken || coachInvitationToken
+              ? [
+                  ...(invitationGrants.athlete ? [UserRole.ATHLETE] : []),
+                  ...(invitationGrants.coach ? [UserRole.COACH] : []),
+                ]
+              : [UserRole.ATHLETE, UserRole.COACH],
           athlete: {
             create: {
               trainingZones: {
@@ -513,10 +524,8 @@ export class UserService {
     );
 
     if (!emailTransportKind((key) => this.configService.get(key))) {
-      // Nothing can carry the link to the user: the instance administrator
-      // reads it here and passes it on
       this.logger.warn(
-        `Email is not configured. Password reset link for ${maskEmail(body.email)}, valid 15 minutes: ${url}`,
+        'Password reset email cannot be delivered: email transport is not configured.',
       );
       return;
     }
@@ -551,7 +560,14 @@ export class UserService {
 
     await this.prisma.user.update({
       where: { userId: user.userId },
-      data: { password: hashedPassword },
+      data: {
+        password: hashedPassword,
+        sessionVersion: { increment: 1 },
+        authSessions: { deleteMany: {} },
+      },
+    });
+    this.eventEmitter.emit('auth.user-sessions.revoked', {
+      userId: user.userId,
     });
   };
 
@@ -562,10 +578,33 @@ export class UserService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const existingUser = await this.prisma.user.findUnique({
+      where: { userId: user.userId },
+      select: { roles: true },
+    });
+    if (!existingUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (!data.roles.every((role) => existingUser.roles.includes(role))) {
+      throw new ForbiddenException('Cannot grant unassigned roles');
+    }
+
+    const hasInvitations =
+      Boolean(data.coachEmail) || Boolean(data.athleteEmails?.length);
+    if (
+      hasInvitations &&
+      (!existingUser.roles.includes(UserRole.COACH) ||
+        !data.roles.includes(UserRole.COACH))
+    ) {
+      throw new ForbiddenException('Only coaches can send invitations');
+    }
+
     // Update user roles, gender, and mark onboarding as completed
     await this.prisma.user.update({
       where: { userId: user.userId },
       data: {
+        roles: data.roles,
         gender: data.gender as Gender | undefined,
         acquisitionSource: data.acquisitionSource,
         onboardingCompleted: true,

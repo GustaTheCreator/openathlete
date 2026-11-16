@@ -84,6 +84,18 @@ export class MessagesGateway
       this.server.to(`user:${userId}`).emit('activity_notice', payload);
   }
 
+  @OnEvent('auth.session.revoked')
+  disconnectRevokedSession(payload: { sessionId: string }) {
+    this.server
+      ?.in(`auth-session:${payload.sessionId}`)
+      .disconnectSockets(true);
+  }
+
+  @OnEvent('auth.user-sessions.revoked')
+  disconnectRevokedUserSessions(payload: { userId: number }) {
+    this.server?.in(`auth-user:${payload.userId}`).disconnectSockets(true);
+  }
+
   @UseGuards(WsJwtAuthGuard)
   @SubscribeMessage('subscribe_inbox')
   handleSubscribeInbox(@ConnectedSocket() client: Socket) {
@@ -109,6 +121,13 @@ export class MessagesGateway
   }
 
   handleDisconnect(client: Socket) {
+    const authExpiryTimer = client.data.authExpiryTimer as
+      ReturnType<typeof setTimeout> | undefined;
+    if (authExpiryTimer) {
+      clearTimeout(authExpiryTimer);
+      delete client.data.authExpiryTimer;
+    }
+
     for (const [userId, sockets] of this.userSockets.entries()) {
       if (sockets.has(client.id)) {
         sockets.delete(client.id);

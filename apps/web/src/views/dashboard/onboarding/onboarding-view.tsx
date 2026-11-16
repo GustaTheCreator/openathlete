@@ -143,6 +143,14 @@ export function OnboardingView() {
   const { data: user, isLoading: isLoadingUser } = useGetMeQuery({
     enabled: authenticated, // Only fetch if authenticated
   });
+  const availableRoles = useMemo(
+    () =>
+      (user?.roles ?? []).filter(
+        (role): role is 'ATHLETE' | 'COACH' =>
+          role === 'ATHLETE' || role === 'COACH',
+      ),
+    [user?.roles],
+  );
 
   // Load initial data from localStorage or use defaults
   const [currentStepIndex, setCurrentStepIndex] = useState(() =>
@@ -159,6 +167,10 @@ export function OnboardingView() {
   });
   const { data: coaches } = useGetMyCoachesQuery();
   const hasCoach = (coaches?.length ?? 0) > 0;
+  const selectedRoles = useMemo(
+    () => data.roles.filter((role) => availableRoles.includes(role)),
+    [data.roles, availableRoles],
+  );
 
   const onboardingFinishedRef = useRef(false);
   const onboardingSnapshotRef = useRef<{
@@ -169,18 +181,17 @@ export function OnboardingView() {
   // Generate steps based on selected roles
   const steps = useMemo<OnboardingStep[]>(() => {
     const baseSteps: OnboardingStep[] = ['welcome', 'role-selection'];
-    const isAthlete = data.roles.includes('ATHLETE');
-    const isCoach = data.roles.includes('COACH');
-    const isAthleteOnly = isAthlete && !isCoach;
+    const isAthlete = selectedRoles.includes('ATHLETE');
+    const isCoach = selectedRoles.includes('COACH');
 
-    if (data.roles.length === 0) {
+    if (selectedRoles.length === 0) {
       return baseSteps;
     }
 
     const roleBasedSteps: OnboardingStep[] = [];
 
-    // If athlete only, add coach invitation step
-    if (isAthleteOnly && !hasCoach) {
+    // Only a user with the coach role may send a coach invitation.
+    if (isAthlete && isCoach && !hasCoach) {
       roleBasedSteps.push('coach-invitation');
     }
 
@@ -196,13 +207,13 @@ export function OnboardingView() {
 
     // Always end with the acquisition question, then complete
     return [...baseSteps, ...roleBasedSteps, 'acquisition-source', 'complete'];
-  }, [data.roles, hasCoach]);
+  }, [selectedRoles, hasCoach]);
 
   const currentStep = steps[currentStepIndex];
 
   onboardingSnapshotRef.current = {
     step: currentStep ?? 'welcome',
-    roles: data.roles,
+    roles: selectedRoles,
   };
 
   // Adjust step index when steps array changes (e.g., when roles change)
@@ -267,13 +278,13 @@ export function OnboardingView() {
         step,
         step_index: stepIndex,
         total_steps: steps.length,
-        roles_selected: [...data.roles],
+        roles_selected: [...selectedRoles],
       });
     };
 
     // If on role-selection, regenerate steps and move to next
     if (currentStep === 'role-selection') {
-      if (data.roles.length === 0) {
+      if (selectedRoles.length === 0) {
         toast.error(m.onboarding_role_selection_subtitle());
         return;
       }
@@ -332,15 +343,20 @@ export function OnboardingView() {
     );
 
     const payload: CompleteOnboardingDto = {
-      roles: data.roles,
+      roles: selectedRoles,
       gender: data.gender,
       weight: data.weight,
       height: data.height,
       hrMax: data.hrMax,
       hrRest: data.hrRest,
-      coachEmail: data.coachEmail || undefined,
+      coachEmail:
+        selectedRoles.includes('COACH') && data.coachEmail
+          ? data.coachEmail
+          : undefined,
       athleteEmails:
-        validAthleteEmails.length > 0 ? validAthleteEmails : undefined,
+        selectedRoles.includes('COACH') && validAthleteEmails.length > 0
+          ? validAthleteEmails
+          : undefined,
       acquisitionSource: data.acquisitionSource,
     };
 
@@ -405,60 +421,43 @@ export function OnboardingView() {
               </p>
             </div>
             <div className="grid gap-3 sm:gap-4">
-              <button
-                onClick={() =>
-                  setData((d) => ({
-                    ...d,
-                    roles: d.roles.includes('ATHLETE')
-                      ? d.roles.filter((r) => r !== 'ATHLETE')
-                      : [...d.roles, 'ATHLETE'],
-                  }))
-                }
-                className={cn(
-                  'flex items-center gap-2 sm:gap-3 rounded-lg border-2 p-3 sm:p-4 text-left transition-colors',
-                  data.roles.includes('ATHLETE')
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border hover:border-primary/50',
-                )}
-              >
-                <CheckCircle2
-                  className={cn(
-                    'h-5 w-5',
-                    data.roles.includes('ATHLETE')
-                      ? 'text-primary'
-                      : 'text-muted-foreground',
-                  )}
-                />
-                <span className="font-medium">
-                  {m.onboarding_role_athlete()}
-                </span>
-              </button>
-              <button
-                onClick={() =>
-                  setData((d) => ({
-                    ...d,
-                    roles: d.roles.includes('COACH')
-                      ? d.roles.filter((r) => r !== 'COACH')
-                      : [...d.roles, 'COACH'],
-                  }))
-                }
-                className={cn(
-                  'flex items-center gap-2 sm:gap-3 rounded-lg border-2 p-3 sm:p-4 text-left transition-colors',
-                  data.roles.includes('COACH')
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border hover:border-primary/50',
-                )}
-              >
-                <CheckCircle2
-                  className={cn(
-                    'h-5 w-5',
-                    data.roles.includes('COACH')
-                      ? 'text-primary'
-                      : 'text-muted-foreground',
-                  )}
-                />
-                <span className="font-medium">{m.onboarding_role_coach()}</span>
-              </button>
+              {availableRoles.map((role) => {
+                const selected = selectedRoles.includes(role);
+                return (
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() =>
+                      setData((d) => ({
+                        ...d,
+                        roles: selected
+                          ? selectedRoles.filter(
+                              (selectedRole) => selectedRole !== role,
+                            )
+                          : [...selectedRoles, role],
+                      }))
+                    }
+                    className={cn(
+                      'flex items-center gap-2 sm:gap-3 rounded-lg border-2 p-3 sm:p-4 text-left transition-colors',
+                      selected
+                        ? 'border-primary bg-primary/10'
+                        : 'border-border hover:border-primary/50',
+                    )}
+                  >
+                    <CheckCircle2
+                      className={cn(
+                        'h-5 w-5',
+                        selected ? 'text-primary' : 'text-muted-foreground',
+                      )}
+                    />
+                    <span className="font-medium">
+                      {role === 'ATHLETE'
+                        ? m.onboarding_role_athlete()
+                        : m.onboarding_role_coach()}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         );
@@ -737,12 +736,12 @@ export function OnboardingView() {
 
   const canProceed = () => {
     if (currentStep === 'role-selection') {
-      return data.roles.length > 0;
+      return selectedRoles.length > 0;
     }
     return true;
   };
 
-  if (!currentStep) {
+  if (isLoadingUser || !user || !currentStep) {
     return null;
   }
 

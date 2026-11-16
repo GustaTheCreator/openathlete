@@ -137,15 +137,15 @@ export enum FeatureName {
 /**
  * Zod schema for subscription plan
  */
-export const subscriptionPlanSchema = z.nativeEnum(SubscriptionPlan);
+export const subscriptionPlanSchema = z.enum(SubscriptionPlan);
 
-export const billingIntervalSchema = z.nativeEnum(BillingInterval);
+export const billingIntervalSchema = z.enum(BillingInterval);
 
-export const billingProviderSchema = z.nativeEnum(BillingProvider);
+export const billingProviderSchema = z.enum(BillingProvider);
 
 /**
  * Zod schema for subscription status
  */
-export const subscriptionStatusSchema = z.nativeEnum(SubscriptionStatus);
+export const subscriptionStatusSchema = z.enum(SubscriptionStatus);
 
 // DTOs are exported from ./dtos/subscription

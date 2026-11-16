@@ -65,7 +65,11 @@ export function MetricQuickEntry({ open, onOpenChange, latest, athleteId }: P) {
   const dateLabel = useMetricDateLabel();
   const [types, setTypes] = useState(MANUAL_METRICS);
   const createMetric = useCreateMetricMutation();
-  const methods = useForm<QuickEntry>({
+  const methods = useForm<
+    z.input<typeof quickEntrySchema>,
+    unknown,
+    QuickEntry
+  >({
     resolver: zodResolver(quickEntrySchema),
     defaultValues: { date: new Date(), values: {} },
   });

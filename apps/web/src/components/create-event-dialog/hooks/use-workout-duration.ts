@@ -5,7 +5,7 @@ import { UseFormGetValues, UseFormSetValue } from 'react-hook-form';
 
 import type { CreateWorkoutStepDto, SPORT_TYPE } from '@openathlete/shared';
 
-import type { EventFormValues } from '../utils/event-form-schemas';
+import type { EventFormInput } from '../utils/event-form-schemas';
 import {
   INITIAL_DURATION_MODE,
   adoptDuration,
@@ -20,8 +20,8 @@ import { calculateWorkoutDurationFromSteps } from '../utils/workout-helpers';
 export function useWorkoutDuration(
   workoutSteps: CreateWorkoutStepDto[],
   sport: SPORT_TYPE | undefined,
-  getValues: UseFormGetValues<EventFormValues>,
-  setValue: UseFormSetValue<EventFormValues>,
+  getValues: UseFormGetValues<EventFormInput>,
+  setValue: UseFormSetValue<EventFormInput>,
   /** The session's athlete, whose paces estimate it; null: the signed-in user */
   athleteId: number | null = null,
 ) {

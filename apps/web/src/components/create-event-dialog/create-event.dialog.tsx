@@ -14,6 +14,7 @@ import { Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { z } from 'zod';
 
 import { AiTask } from '@openathlete/shared';
 import type {
@@ -54,10 +55,7 @@ import { useEventFormSubmission } from './hooks/use-event-form-submission';
 import { useWorkoutDuration } from './hooks/use-workout-duration';
 import { useWorkoutSteps } from './hooks/use-workout-steps';
 import { getEndDate, getStartDate } from './utils/date-helpers';
-import {
-  type EventFormValues,
-  eventFormSchema,
-} from './utils/event-form-schemas';
+import { eventFormSchema } from './utils/event-form-schemas';
 import { getFormDefaultValues } from './utils/form-default-values';
 import { plannedEndDate } from './utils/planned-duration';
 
@@ -126,7 +124,11 @@ export function CreateEventDialog({ open, onClose, ...rest }: P) {
   }, [create, edit, rest, planned]);
 
   // Initialize form
-  const methods = useForm<EventFormValues>({
+  const methods = useForm<
+    z.input<typeof eventFormSchema>,
+    unknown,
+    z.output<typeof eventFormSchema>
+  >({
     resolver: zodResolver(eventFormSchema),
     defaultValues: getFormDefaultValues(rest, startDate, endDate),
   });
@@ -137,7 +139,10 @@ export function CreateEventDialog({ open, onClose, ...rest }: P) {
   const { workoutSteps, setWorkoutSteps } = useWorkoutSteps(rest);
 
   // Watch form values for UI
-  const startDateValue = watch('startDate');
+  const toDateValue = (value: Date | string | undefined) =>
+    typeof value === 'string' ? new Date(value) : value;
+  const startDateValue = toDateValue(watch('startDate'));
+  const endDateValue = toDateValue(watch('endDate'));
   const goalDistanceValue = watch('goalDistance');
   const goalDurationValue = watch('goalDuration');
   const sportValue = watch('sport');
@@ -576,7 +581,7 @@ export function CreateEventDialog({ open, onClose, ...rest }: P) {
               onDurationEdited={setDurationByHand}
               onFollowWorkout={followWorkout}
               startDateValue={startDateValue}
-              endDateValue={watch('endDate')}
+              endDateValue={endDateValue}
               canChooseEquipment={
                 edit &&
                 'event' in rest &&

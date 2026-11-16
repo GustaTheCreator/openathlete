@@ -5,7 +5,9 @@ import {
   type Auth,
   GoogleAuthProvider,
   OAuthProvider,
-  getAuth,
+  browserPopupRedirectResolver,
+  inMemoryPersistence,
+  initializeAuth,
   signInWithPopup,
 } from 'firebase/auth';
 
@@ -51,7 +53,10 @@ function getWebAuth(): Auth {
 
   const config = getFirebaseWebConfig();
   const app = initializeApp(config);
-  webAuth = getAuth(app);
+  webAuth = initializeAuth(app, {
+    persistence: inMemoryPersistence,
+    popupRedirectResolver: browserPopupRedirectResolver,
+  });
   return webAuth;
 }
 

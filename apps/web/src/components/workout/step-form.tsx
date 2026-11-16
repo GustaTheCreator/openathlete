@@ -35,37 +35,32 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
-import {
-  SPORT_TYPE,
-  WORKOUT_DURATION_TYPE,
-  WORKOUT_STEP_TYPE,
+import { SPORT_TYPE } from '@openathlete/shared';
+import type {
+  CreateWorkoutStepDto,
+  WorkoutStepDto,
+  WorkoutStepTargetDto,
 } from '@openathlete/shared';
-import type { WorkoutStepDto, WorkoutStepTargetDto } from '@openathlete/shared';
 
 import { TargetBadge } from './target-badge';
 import { TargetForm } from './target-form';
 import { TypeIcon } from './type-icon';
 
 const STEP_TYPE_VALUES = [
-  WORKOUT_STEP_TYPE.WARMUP,
-  WORKOUT_STEP_TYPE.COOLDOWN,
-  WORKOUT_STEP_TYPE.INTERVAL_ACTIVE,
-  WORKOUT_STEP_TYPE.INTERVAL_REST,
-  WORKOUT_STEP_TYPE.STEADY,
-  WORKOUT_STEP_TYPE.FREE,
+  'WARMUP',
+  'COOLDOWN',
+  'INTERVAL_ACTIVE',
+  'INTERVAL_REST',
+  'STEADY',
+  'FREE',
 ] as const;
 
-const DURATION_TYPE_VALUES = [
-  WORKOUT_DURATION_TYPE.TIME,
-  WORKOUT_DURATION_TYPE.DISTANCE,
-  WORKOUT_DURATION_TYPE.REPS,
-  WORKOUT_DURATION_TYPE.OPEN,
-] as const;
+const DURATION_TYPE_VALUES = ['TIME', 'DISTANCE', 'REPS', 'OPEN'] as const;
 
 const stepFormSchema = z.object({
-  stepType: z.nativeEnum(WORKOUT_STEP_TYPE),
+  stepType: z.enum(STEP_TYPE_VALUES),
   name: z.string().nullable().optional(),
-  durationType: z.nativeEnum(WORKOUT_DURATION_TYPE),
+  durationType: z.enum(DURATION_TYPE_VALUES),
   durationValue: z.number().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
@@ -83,7 +78,7 @@ type TargetWithId = {
 
 interface StepFormProps {
   initialValues?: Partial<WorkoutStepDto>;
-  onSubmit: (values: StepFormValues & { targets: TargetWithId[] }) => void;
+  onSubmit: (values: CreateWorkoutStepDto) => void;
   onCancel?: () => void;
   submitLabel?: string;
   cancelLabel?: string;
@@ -110,13 +105,24 @@ export function StepForm({
   );
   const [isTargetDialogOpen, setIsTargetDialogOpen] = useState(false);
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
+  const initialStepType =
+    STEP_TYPE_VALUES.find((value) => value === initialValues?.stepType) ??
+    'STEADY';
+  const initialDurationType =
+    DURATION_TYPE_VALUES.find(
+      (value) => value === initialValues?.durationType,
+    ) ?? 'TIME';
 
-  const form = useForm<StepFormValues>({
+  const form = useForm<
+    z.input<typeof stepFormSchema>,
+    unknown,
+    z.output<typeof stepFormSchema>
+  >({
     resolver: zodResolver(stepFormSchema),
     defaultValues: {
-      stepType: initialValues?.stepType || 'STEADY',
+      stepType: initialStepType,
       name: initialValues?.name || null,
-      durationType: initialValues?.durationType || 'TIME',
+      durationType: initialDurationType,
       durationValue: initialValues?.durationValue || null,
       notes: initialValues?.notes || null,
     },

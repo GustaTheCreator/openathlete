@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
+import { UserRole } from '@openathlete/database';
 import { ApiEnvSchemaType } from '@openathlete/shared';
 
 import { CaslAbilityFactory } from 'src/modules/auth';
@@ -179,6 +180,14 @@ describe('invitation links (PostgreSQL)', () => {
       expect(
         await athleteInvitations.getPendingInvitationsForAthlete(athleteUserId),
       ).toEqual([]);
+      await expect(
+        prisma.user.findUniqueOrThrow({
+          where: { userId: athleteUserId },
+          select: { roles: true },
+        }),
+      ).resolves.toMatchObject({
+        roles: expect.arrayContaining([UserRole.ATHLETE]),
+      });
     });
 
     it('is offered to the coach it names by email, and to nobody else', async () => {
@@ -213,6 +222,14 @@ describe('invitation links (PostgreSQL)', () => {
           where: { coachInvitationId },
         }),
       ).toMatchObject({ status: 'ACCEPTED', coachUserId });
+      await expect(
+        prisma.user.findUniqueOrThrow({
+          where: { userId: coachUserId },
+          select: { roles: true },
+        }),
+      ).resolves.toMatchObject({
+        roles: expect.arrayContaining([UserRole.COACH]),
+      });
     });
   });
 });

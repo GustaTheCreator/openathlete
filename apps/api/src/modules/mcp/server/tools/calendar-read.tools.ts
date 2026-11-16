@@ -349,7 +349,7 @@ export const registerCalendarReadTools: ToolRegistrar = (server, ctx, deps) => {
         athleteId: athleteIdInput,
         from: localDate,
         to: localDate,
-        sport: z.nativeEnum(SportType).optional().describe('Only this sport'),
+        sport: z.enum(SportType).optional().describe('Only this sport'),
         limit: z.number().int().min(1).max(300).default(150),
       },
       outputSchema: activitiesOutput,

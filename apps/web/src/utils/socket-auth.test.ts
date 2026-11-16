@@ -3,7 +3,6 @@ import type { Socket } from 'socket.io-client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getAccessToken, refreshToken } from './auth';
-import { ACCESS_TOKEN, REFRESH_TOKEN } from './local-storage';
 import { keepSocketAuthenticated } from './socket-auth';
 
 vi.mock('./auth', async (importActual) => ({
@@ -26,11 +25,21 @@ function fakeSocket() {
       return socket;
     }),
     off: vi.fn(),
-    disconnect: vi.fn(() => socket),
-    connect: vi.fn(() => socket),
+    disconnect: vi.fn(() => {
+      socket.connected = false;
+      return socket;
+    }),
+    connect: vi.fn(() => {
+      socket.connected = true;
+      return socket;
+    }),
     // What Nest sends when a guard refuses an event
     refuses: (message: string) =>
       listeners.get('exception')?.({ status: 'error', message }),
+    disconnects: (reason: string) => {
+      socket.connected = false;
+      listeners.get('disconnect')?.(reason);
+    },
   };
   return socket;
 }
@@ -71,8 +80,7 @@ describe('keepSocketAuthenticated', () => {
       refreshed: true,
     });
     await expect(handshake(socket)).resolves.toEqual({ token: second });
-    expect(localStorage.getItem(ACCESS_TOKEN)).toBe(second);
-    expect(localStorage.getItem(REFRESH_TOKEN)).toBe('new-refresh');
+    expect(localStorage.length).toBe(0);
   });
 
   // The server checks each event against the handshake token: a connected
@@ -117,8 +125,112 @@ describe('keepSocketAuthenticated', () => {
 
     expect(refreshToken).toHaveBeenCalledTimes(1);
     expect(socket.disconnect).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem(ACCESS_TOKEN)).toBe(fresh);
-    expect(localStorage.getItem(REFRESH_TOKEN)).toBe('new-refresh');
+    expect(localStorage.length).toBe(0);
+  });
+
+  it('refreshes and reconnects after the server disconnects an expired socket', async () => {
+    const socket = fakeSocket();
+    const authentication = keepSocketAuthenticated(socket as unknown as Socket);
+    const stale = tokenExpiringIn(600);
+    const fresh = tokenExpiringIn(3600);
+    vi.mocked(getAccessToken)
+      .mockResolvedValueOnce({ accessToken: stale, refreshed: false })
+      .mockResolvedValueOnce({ accessToken: fresh, refreshed: false });
+    await handshake(socket);
+    vi.mocked(refreshToken).mockResolvedValueOnce({
+      accessToken: fresh,
+      refreshed: true,
+    });
+
+    socket.disconnects('io server disconnect');
+    await vi.waitFor(() => expect(socket.connect).toHaveBeenCalledOnce());
+    await expect(handshake(socket)).resolves.toEqual({ token: fresh });
+
+    expect(refreshToken).toHaveBeenCalledOnce();
+    expect(socket.disconnect).not.toHaveBeenCalled();
+    authentication.stop();
+  });
+
+  it.each([
+    ['revoked refresh session', null],
+    ['refresh returning the same expired JWT', 'same'],
+  ])('does not reconnect for %s', async (_name, result) => {
+    const socket = fakeSocket();
+    keepSocketAuthenticated(socket as unknown as Socket);
+    const stale = tokenExpiringIn(600);
+    vi.mocked(getAccessToken).mockResolvedValueOnce({
+      accessToken: stale,
+      refreshed: false,
+    });
+    await handshake(socket);
+    vi.mocked(refreshToken).mockResolvedValueOnce(
+      result === 'same' ? { accessToken: stale, refreshed: true } : null,
+    );
+
+    socket.disconnects('io server disconnect');
+    await vi.waitFor(() => expect(refreshToken).toHaveBeenCalledOnce());
+    await Promise.resolve();
+
+    expect(socket.connect).not.toHaveBeenCalled();
+  });
+
+  it('shares one refresh between an expiry refusal and server disconnect', async () => {
+    const socket = fakeSocket();
+    keepSocketAuthenticated(socket as unknown as Socket);
+    const stale = tokenExpiringIn(600);
+    vi.mocked(getAccessToken).mockResolvedValueOnce({
+      accessToken: stale,
+      refreshed: false,
+    });
+    await handshake(socket);
+    let resolveRefresh!: (info: {
+      accessToken: string;
+      refreshed: boolean;
+    }) => void;
+    vi.mocked(refreshToken).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+
+    socket.refuses('Unauthorized: jwt expired');
+    socket.disconnects('io server disconnect');
+    expect(refreshToken).toHaveBeenCalledOnce();
+
+    resolveRefresh({ accessToken: tokenExpiringIn(3600), refreshed: true });
+    await vi.waitFor(() => expect(socket.connect).toHaveBeenCalledOnce());
+  });
+
+  it('does not reconnect when stopped while a refresh is pending', async () => {
+    const socket = fakeSocket();
+    const authentication = keepSocketAuthenticated(socket as unknown as Socket);
+    const stale = tokenExpiringIn(600);
+    vi.mocked(getAccessToken).mockResolvedValueOnce({
+      accessToken: stale,
+      refreshed: false,
+    });
+    await handshake(socket);
+    let resolveRefresh!: (info: {
+      accessToken: string;
+      refreshed: boolean;
+    }) => void;
+    vi.mocked(refreshToken).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+
+    socket.disconnects('io server disconnect');
+    authentication.stop();
+    resolveRefresh({
+      accessToken: tokenExpiringIn(3600),
+      refreshed: true,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(socket.connect).not.toHaveBeenCalled();
+    expect(socket.off).toHaveBeenCalledWith('disconnect', expect.any(Function));
   });
 
   it('stays put when no new token can be obtained', async () => {

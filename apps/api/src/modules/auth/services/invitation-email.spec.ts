@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
+import { UserRole } from '@openathlete/database';
 import { ApiEnvSchemaType, EmailId } from '@openathlete/shared';
 
 import { SendEmailEvent } from 'src/events';
@@ -17,9 +18,14 @@ const inviter = {
   firstName: 'Ana',
   lastName: 'Lopez',
   language: 'ES',
+  roles: [UserRole.COACH],
+  onboardingCompleted: true,
 };
 
-function setup() {
+function setup(
+  roles: UserRole[] = [UserRole.COACH],
+  onboardingCompleted = true,
+) {
   const emitter = { emit: jest.fn() };
   const invitations = {
     findFirst: jest.fn().mockResolvedValue(null),
@@ -29,7 +35,7 @@ function setup() {
     user: {
       findUnique: jest
         .fn()
-        .mockResolvedValueOnce(inviter)
+        .mockResolvedValueOnce({ ...inviter, roles, onboardingCompleted })
         .mockResolvedValueOnce(null),
     },
     athleteInvitation: invitations,
@@ -56,6 +62,8 @@ function setup() {
     athleteInvitations: new AthleteInvitationService(...args),
     coachInvitations: new CoachInvitationService(...args),
     email,
+    emitter,
+    invitations,
   };
 }
 
@@ -78,5 +86,42 @@ describe("invitations to someone without an account use the inviter's language",
       to: 'new@example.com',
       language: 'ES',
     });
+  });
+});
+
+describe('invitation creation requires the persisted COACH role', () => {
+  it('rejects athlete-only users before creating or emailing invitations', async () => {
+    const athleteSetup = setup([UserRole.ATHLETE]);
+
+    await expect(
+      athleteSetup.athleteInvitations.createInvitation(1, 'new@example.com'),
+    ).rejects.toThrow('Only coaches can invite athletes');
+
+    const coachSetup = setup([UserRole.ATHLETE]);
+    await expect(
+      coachSetup.coachInvitations.createInvitation(1, 'new@example.com'),
+    ).rejects.toThrow('Only coaches can send invitations');
+
+    for (const { emitter, invitations } of [athleteSetup, coachSetup]) {
+      expect(invitations.create).not.toHaveBeenCalled();
+      expect(emitter.emit).not.toHaveBeenCalled();
+    }
+  });
+
+  it('rejects accounts with both roles until onboarding is complete', async () => {
+    const athleteSetup = setup([UserRole.ATHLETE, UserRole.COACH], false);
+    const coachSetup = setup([UserRole.ATHLETE, UserRole.COACH], false);
+
+    await expect(
+      athleteSetup.athleteInvitations.createInvitation(1, 'new@example.com'),
+    ).rejects.toThrow('Complete onboarding before inviting');
+    await expect(
+      coachSetup.coachInvitations.createInvitation(1, 'new@example.com'),
+    ).rejects.toThrow('Complete onboarding before inviting');
+
+    for (const { emitter, invitations } of [athleteSetup, coachSetup]) {
+      expect(invitations.create).not.toHaveBeenCalled();
+      expect(emitter.emit).not.toHaveBeenCalled();
+    }
   });
 });

@@ -27,6 +27,7 @@ import {
 
 import { RATE_LIMITS } from 'src/common/security/rate-limits';
 
+import { AuthCookieService } from '../services/auth-cookie.service';
 import { OIDC_STATE_COOKIE, OidcService } from '../services/oidc.service';
 
 const startQuerySchema = z.object({
@@ -54,6 +55,7 @@ export class OidcController {
   constructor(
     private readonly oidc: OidcService,
     private readonly config: ConfigService<ApiEnvSchemaType, true>,
+    private readonly cookies: AuthCookieService,
   ) {}
 
   private cookieOptions(maxAgeMs: number) {
@@ -125,9 +127,12 @@ export class OidcController {
   @ApiResponse({ status: 401, description: 'Unknown, expired or used code' })
   async exchange(
     @Body(new ZodValidationPipe(oidcExchangeDtoSchema)) body: OidcExchangeDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
+    this.cookies.assertLogin(req);
     const session = await this.oidc.exchange(body.code);
     if (!session) throw new UnauthorizedException();
-    return session;
+    return this.cookies.respond(session, req, res);
   }
 }

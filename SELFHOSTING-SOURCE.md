@@ -1,10 +1,28 @@
-# Corresponding source
+# Build this fork
 
-Application source commit: a11ee107209ca289cd1f2db3f1958bd100d755f1 (OpenAthlete v1.6.0 plus Wahoo).
-Personal project notes and private deployment data are excluded.
+This fork is based on OpenAthlete v1.6.0. Its release tag is `tourmalet-2026.11.16`; use that tag to obtain the source corresponding to the installed release. The upstream AGPL-3.0 license remains in `LICENSE`.
 
-Use Node 22.23.4 and pnpm 9.15.9. Run pnpm install --frozen-lockfile, pnpm database run db:generate, pnpm shared build, pnpm api build and pnpm web build. Dockerfiles and the lockfile are included. See LICENSE.
+Use Node 22.23.4 and pnpm 9.15.9, or the supplied Dockerfiles with pinned base images. Generate your own credentials in private environment files; example values are not deployment credentials. Keep databases, backups, tunnel credentials and personal project notes outside Git and Docker build contexts.
 
-The optional selfhost files reproduce the source-download link in the deployed web image. Mount the entrypoint script and this archive as shown in selfhost/docker-compose.source.yml. Never include real environment values or provider credentials.
+For a local build:
 
-To reproduce the optional source link, place this archive at public-source/openathlete-wahoo-a11ee107209c.tar.gz and merge selfhost/docker-compose.source.yml with the base Compose file; paths are relative to the extraction root.
+```sh
+pnpm install --frozen-lockfile
+pnpm database run db:generate
+pnpm shared build
+pnpm api build
+pnpm web build
+```
+
+For a container build, first configure your private `.env` using the upstream self-hosting instructions. Set `APP_URL` to the exact browser address, use HTTPS for public access, and set `SIGNUP_MODE=invite`. Create the first account privately before exposing a fresh installation. Arbitrary/local AI endpoints are disabled by default; leave `AI_ALLOW_CUSTOM_ENDPOINTS=false` on a public instance.
+
+Supply your own privacy page at `public-privacy/index.html`, identifying your actual operator and data practices. It is mounted read-only at `/privacidade/`; the team's deployment-specific policy and configuration are not part of this repository.
+
+```sh
+docker compose -f docker-compose.yml -f selfhost/docker-compose.source.yml build api web
+docker compose -f docker-compose.yml -f selfhost/docker-compose.source.yml up -d
+```
+
+The application contains the source link in its React footer. No startup script or injected floating link is required. The link opens this fork's release tag on GitHub.
+
+See `SECURITY.md` for session changes, the remaining tooling advisory and reporting instructions. Before upgrades, back up the database and private configuration and test migrations against an isolated copy. The session migration is additive, but legacy session JWTs are rejected and users must sign in again.

@@ -4,8 +4,8 @@ import { EQUIPMENT_TYPE, SPORT_TYPE } from '../../misc';
 
 export const createEquipmentDtoSchema = z.object({
   name: z.string().min(1).max(100),
-  type: z.nativeEnum(EQUIPMENT_TYPE),
-  sports: z.array(z.nativeEnum(SPORT_TYPE)),
+  type: z.enum(EQUIPMENT_TYPE),
+  sports: z.array(z.enum(SPORT_TYPE)),
   isDefault: z.boolean().default(false),
 });
 

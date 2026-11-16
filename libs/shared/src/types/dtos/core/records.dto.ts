@@ -6,7 +6,7 @@ import { SPORT_TYPE } from '../../misc/core/sport-type.enum';
 /** Best record at one distance or duration, with the activity it comes from. */
 export const bestRecordSchema = z.object({
   recordId: z.number(),
-  type: z.nativeEnum(RECORD_TYPE),
+  type: z.enum(RECORD_TYPE),
   /** Metres covered: pace and climbing records */
   distance: z.number().nullable(),
   /** Seconds covered: power and heart rate records */
@@ -21,7 +21,7 @@ export const bestRecordSchema = z.object({
 export type BestRecordDto = z.infer<typeof bestRecordSchema>;
 
 export const getRecordsQuerySchema = z.object({
-  sport: z.nativeEnum(SPORT_TYPE).optional(),
+  sport: z.enum(SPORT_TYPE).optional(),
   athleteId: z.coerce.number().int().positive().optional(),
   /** Records set from this date on */
   from: z.coerce.date().optional(),
@@ -58,7 +58,7 @@ export const recordHistorySchema = z.object({
 export type RecordHistoryDto = z.infer<typeof recordHistorySchema>;
 
 export const getRecordHistoryQuerySchema = z.object({
-  sport: z.nativeEnum(SPORT_TYPE),
+  sport: z.enum(SPORT_TYPE),
   athleteId: z.coerce.number().int().positive().optional(),
 });
 
@@ -68,7 +68,7 @@ export type GetRecordHistoryQueryDto = z.infer<
 
 export const getRecordEffortsQuerySchema = getRecordHistoryQuerySchema
   .extend({
-    type: z.nativeEnum(RECORD_TYPE),
+    type: z.enum(RECORD_TYPE),
     distance: z.coerce.number().positive().optional(),
     duration: z.coerce.number().int().positive().optional(),
   })
@@ -88,7 +88,7 @@ export const createRecordExclusionSchema = z
   .object({
     eventActivityId: z.number().int().positive(),
     /** Without a type, the exclusion covers the whole activity */
-    type: z.nativeEnum(RECORD_TYPE).optional(),
+    type: z.enum(RECORD_TYPE).optional(),
     distance: z.number().positive().optional(),
     duration: z.number().int().positive().optional(),
   })
@@ -110,7 +110,7 @@ export const recordExclusionSchema = z.object({
   eventId: z.number(),
   activityName: z.string().nullable(),
   date: z.coerce.date(),
-  type: z.nativeEnum(RECORD_TYPE).nullable(),
+  type: z.enum(RECORD_TYPE).nullable(),
   distance: z.number().nullable(),
   duration: z.number().nullable(),
 });

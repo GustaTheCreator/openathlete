@@ -1,6 +1,18 @@
+import type { Request, Response } from 'express';
 import { ZodValidationPipe } from 'nestjs-zod';
 
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  Req,
+  Res,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import {
   ApiBody,
   ApiOperation,
@@ -22,7 +34,9 @@ import {
 
 import { RATE_LIMITS } from 'src/common/security/rate-limits';
 
+import { AuthUser, JwtUser } from '../decorators/user.decorator';
 import { AuthService } from '../services';
+import { AuthCookieService } from '../services/auth-cookie.service';
 import { InvitationService } from '../services/invitation.service';
 
 @ApiTags('Auth')
@@ -31,6 +45,7 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private invitationService: InvitationService,
+    private cookies: AuthCookieService,
   ) {}
 
   @Throttle(RATE_LIMITS.login)
@@ -86,8 +101,15 @@ export class AuthController {
   })
   async login(
     @Body(new ZodValidationPipe(loginDtoSchema)) credentials: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
-    return await this.authService.login(credentials);
+    this.cookies.assertLogin(req);
+    return this.cookies.respond(
+      await this.authService.login(credentials),
+      req,
+      res,
+    );
   }
 
   @Throttle(RATE_LIMITS.login)
@@ -99,8 +121,15 @@ export class AuthController {
   })
   async loginWithFirebase(
     @Body(new ZodValidationPipe(firebaseLoginDtoSchema)) body: FirebaseLoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
-    return await this.authService.loginWithFirebase(body);
+    this.cookies.assertLogin(req);
+    return this.cookies.respond(
+      await this.authService.loginWithFirebase(body),
+      req,
+      res,
+    );
   }
 
   @Throttle(RATE_LIMITS.tokenRefresh)
@@ -152,8 +181,31 @@ export class AuthController {
   })
   async refreshToken(
     @Body(new ZodValidationPipe(refreshTokenDtoSchema)) body: RefreshTokenDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
-    return this.authService.refresh(body.refreshToken);
+    const browser = this.cookies.isBrowser(req);
+    const token = browser ? this.cookies.refreshToken(req) : body.refreshToken;
+    if (!token) throw new UnauthorizedException();
+    if (browser) this.cookies.assertCsrf(req);
+    return this.cookies.respond(
+      await this.authService.refresh(token),
+      req,
+      res,
+    );
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Post('logout')
+  async logout(
+    @JwtUser() user: AuthUser,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    if (this.cookies.isBrowser(req)) this.cookies.assertCsrf(req);
+    if (!user.authSessionId) throw new UnauthorizedException();
+    await this.authService.revokeSession(user.userId, user.authSessionId);
+    this.cookies.clear(res);
   }
 
   @Throttle(RATE_LIMITS.accountLookup)

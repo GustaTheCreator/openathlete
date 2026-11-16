@@ -11,6 +11,7 @@ import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type {
+  CreateWorkoutStepDto,
   StepZoneLike,
   WorkoutDto,
   WorkoutStepDto,
@@ -51,11 +52,11 @@ export function WorkoutBuilder({
   const prevWorkoutRef = useRef<WorkoutDto | null | undefined>(workout);
   const lastEmittedStepsRef = useRef<string>('');
 
-  const generateTempId = () => {
+  const generateTempId = useCallback(() => {
     const newId = -(Date.now() + idCounter);
     setIdCounter((prev) => prev + 1);
     return newId;
-  };
+  }, [idCounter]);
 
   const ensureIdsAndOrder = useCallback(
     (input: WorkoutStepDto[]): WorkoutStepDto[] => {
@@ -84,8 +85,7 @@ export function WorkoutBuilder({
         });
       return assign(input || []);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [idCounter],
+    [generateTempId],
   );
 
   const prepareStepsForSave = useCallback((stepsToClean: WorkoutStepDto[]) => {
@@ -150,9 +150,10 @@ export function WorkoutBuilder({
   const handleAddRepeatBlock = () => {
     const newRepeatStep: WorkoutStepDto = {
       orderIndex: steps.length,
-      stepType: WORKOUT_STEP_TYPE.REPEAT as WORKOUT_STEP_TYPE,
-      durationType: WORKOUT_DURATION_TYPE.OPEN as WORKOUT_DURATION_TYPE,
+      stepType: WORKOUT_STEP_TYPE.REPEAT,
+      durationType: WORKOUT_DURATION_TYPE.OPEN,
       workoutStepId: generateTempId(),
+      targets: [],
       repeatBlock: {
         repetitions: 1,
         childSteps: [],
@@ -165,7 +166,7 @@ export function WorkoutBuilder({
     setDialogState({ type: 'step', editing: step });
   };
 
-  const handleStepSubmit = (step: Omit<WorkoutStepDto, 'workoutStepId'>) => {
+  const handleStepSubmit = (step: CreateWorkoutStepDto) => {
     if (dialogState.type === 'step' && dialogState.editing) {
       setSteps((prev) =>
         prev.map((s) => {
@@ -228,16 +229,24 @@ export function WorkoutBuilder({
 
   const handleAddChildStep = (
     parentStepId: number,
-    childStep: Omit<WorkoutStepDto, 'workoutStepId'>,
+    childStep: CreateWorkoutStepDto,
   ) => {
     setSteps((prev) =>
       prev.map((s) => {
         if (s.workoutStepId === parentStepId && s.repeatBlock) {
           const newChildStep: WorkoutStepDto = {
-            ...childStep,
             workoutStepId: generateTempId(),
             orderIndex: s.repeatBlock.childSteps.length,
-          } as WorkoutStepDto;
+            stepType: childStep.stepType,
+            durationType: childStep.durationType ?? 'OPEN',
+            name: childStep.name ?? null,
+            durationValue: childStep.durationValue ?? null,
+            notes: childStep.notes ?? null,
+            exerciseRef: childStep.exerciseRef ?? null,
+            tempo: childStep.tempo ?? null,
+            side: childStep.side ?? null,
+            targets: childStep.targets ?? [],
+          };
           return {
             ...s,
             repeatBlock: {

@@ -1,5 +1,8 @@
-import type { CreateWorkoutStepDto } from '../../types/dtos/core/workout.dto';
-import type { TRAINING_ZONE_TYPE, WORKOUT_STEP_TYPE } from '../../types/misc';
+import type {
+  CreateWorkoutStepDto,
+  WorkoutStepType,
+} from '../../types/dtos/core/workout.dto';
+import type { TRAINING_ZONE_TYPE } from '../../types/misc';
 import type { SPORT_TYPE } from '../../types/misc/core/sport-type.enum';
 import type { WorkoutTextLocale } from './vocabulary';
 
@@ -18,7 +21,7 @@ export interface WorkoutTextContext {
    * Type of the steps that do not say theirs, instead of reading it from
    * their place: editing one line keeps the type its step had
    */
-  stepType?: WORKOUT_STEP_TYPE;
+  stepType?: WorkoutStepType;
 }
 
 export interface WorkoutTextSerializeOptions extends WorkoutTextContext {

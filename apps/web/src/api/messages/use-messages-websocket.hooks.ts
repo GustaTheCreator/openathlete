@@ -1,5 +1,4 @@
 import { m } from '@/paraglide/messages';
-import { ACCESS_TOKEN, getItem } from '@/utils/local-storage';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Socket } from 'socket.io-client';
@@ -294,8 +293,7 @@ export function useMessagesWebSocket({
       socket.emit('subscribe_inbox');
       setIsConnected(true);
     }
-    const token = getItem(ACCESS_TOKEN);
-    if (token && !socket.connected && !connectingRef.current) {
+    if (!socket.connected && !connectingRef.current) {
       connectingRef.current = true;
       MessagesAPI.connectSocket()
         .catch((err) => {

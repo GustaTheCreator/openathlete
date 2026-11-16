@@ -5,12 +5,13 @@ import {
   type SPORT_TYPE,
   type StepZoneLike,
   WORKOUT_DURATION_TYPE,
+  type WorkoutDurationType,
   type WorkoutStepTargetDto,
   estimateStepDistanceFromDuration,
 } from '@openathlete/shared';
 
 interface DurationDisplayProps {
-  durationType: WORKOUT_DURATION_TYPE;
+  durationType: WorkoutDurationType;
   durationValue?: number | null;
   targets?: WorkoutStepTargetDto[];
   sport?: SPORT_TYPE;

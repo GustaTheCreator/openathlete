@@ -17,7 +17,7 @@ export enum STORED_FILE_PURPOSE {
 }
 
 export const uploadImageDtoSchema = z.object({
-  purpose: z.nativeEnum(STORED_FILE_PURPOSE),
+  purpose: z.enum(STORED_FILE_PURPOSE),
   /** The conversation, for a MESSAGE image */
   messageThreadId: z.coerce.number().int().positive().optional(),
 });

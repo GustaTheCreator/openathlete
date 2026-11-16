@@ -23,17 +23,17 @@ const strengthStepFields = {
     .optional()
     .describe('Strength exercise: "c:<slug>" from the catalog'),
   tempo: tempoSchema.nullable().optional(),
-  side: z.nativeEnum(EXERCISE_SIDE).nullable().optional(),
+  side: z.enum(EXERCISE_SIDE).nullable().optional(),
 };
 const repeatModeFields = {
-  kind: z.nativeEnum(WORKOUT_REPEAT_KIND).optional(),
+  kind: z.enum(WORKOUT_REPEAT_KIND).optional(),
   intervalSeconds: z.number().int().min(10).max(3600).nullable().optional(),
   timeCapSeconds: z.number().int().min(30).max(14400).nullable().optional(),
 };
 
 export const workoutStepTargetSchema = z.object({
   workoutStepTargetId: z.number().optional(),
-  targetType: z.nativeEnum(WORKOUT_TARGET_TYPE),
+  targetType: z.enum(WORKOUT_TARGET_TYPE),
   targetMin: z.number().nullable().optional(),
   targetMax: z.number().nullable().optional(),
   targetValue: z.number().nullable().optional(),
@@ -43,40 +43,103 @@ export const workoutStepTargetSchema = z.object({
   updatedAt: z.coerce.date().optional(),
 });
 
-export type WorkoutStepTargetDto = z.infer<typeof workoutStepTargetSchema>;
+type EnumValue<T extends string> = `${T}`;
 
-export const workoutStepSchema: z.ZodSchema = z.lazy(() =>
-  z.object({
-    workoutStepId: z.number().optional(),
-    orderIndex: z.number(),
-    stepType: z.nativeEnum(WORKOUT_STEP_TYPE),
-    name: z.string().nullable().optional(),
-    notes: z.string().nullable().optional(),
-    durationType: z.nativeEnum(WORKOUT_DURATION_TYPE),
-    durationValue: z.number().nullable().optional(),
-    durationTarget: z.number().nullable().optional(),
-    ...strengthStepFields,
-    workoutId: z.number().optional(),
-    repeatParentId: z.number().nullable().optional(),
-    targets: z.array(workoutStepTargetSchema).default([]),
-    repeatBlock: z
-      .object({
-        workoutRepeatId: z.number().optional(),
-        repetitions: z.number().min(1).max(99),
-        ...repeatModeFields,
-        stepId: z.number().optional(),
-        childSteps: z.array(workoutStepSchema).default([]),
-        createdAt: z.coerce.date().optional(),
-        updatedAt: z.coerce.date().optional(),
-      })
-      .nullable()
-      .optional(),
-    createdAt: z.coerce.date().optional(),
-    updatedAt: z.coerce.date().optional(),
-  }),
-);
+export type WorkoutStepType = EnumValue<WORKOUT_STEP_TYPE>;
+export type WorkoutDurationType = EnumValue<WORKOUT_DURATION_TYPE>;
+export type WorkoutTargetType = EnumValue<WORKOUT_TARGET_TYPE>;
+export type ExerciseSide = EnumValue<EXERCISE_SIDE>;
+export type WorkoutRepeatKind = EnumValue<WORKOUT_REPEAT_KIND>;
 
-export type WorkoutStepDto = z.infer<typeof workoutStepSchema>;
+export type WorkoutStepTargetDto = Omit<
+  z.infer<typeof workoutStepTargetSchema>,
+  'targetType'
+> & { targetType: WorkoutTargetType };
+
+const workoutStepBaseSchema = z.object({
+  workoutStepId: z.number().optional(),
+  orderIndex: z.number(),
+  stepType: z.enum(WORKOUT_STEP_TYPE),
+  name: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  durationType: z.enum(WORKOUT_DURATION_TYPE),
+  durationValue: z.number().nullable().optional(),
+  durationTarget: z.number().nullable().optional(),
+  ...strengthStepFields,
+  workoutId: z.number().optional(),
+  repeatParentId: z.number().nullable().optional(),
+  targets: z.array(workoutStepTargetSchema).default([]),
+  createdAt: z.coerce.date().optional(),
+  updatedAt: z.coerce.date().optional(),
+});
+
+type WorkoutStepInput = z.input<typeof workoutStepBaseSchema> & {
+  repeatBlock?: {
+    workoutRepeatId?: number;
+    repetitions: number;
+    kind?: EnumValue<WORKOUT_REPEAT_KIND>;
+    intervalSeconds?: number | null;
+    timeCapSeconds?: number | null;
+    stepId?: number;
+    childSteps?: WorkoutStepInput[];
+    createdAt?: unknown;
+    updatedAt?: unknown;
+  } | null;
+};
+
+type WorkoutStepSchemaOutput = z.output<typeof workoutStepBaseSchema>;
+export type WorkoutStepDto = Omit<
+  WorkoutStepSchemaOutput,
+  | 'workoutStepId'
+  | 'stepType'
+  | 'durationType'
+  | 'side'
+  | 'workoutId'
+  | 'targets'
+> & {
+  /** Existing editor and transport shape includes persisted and partial step records. */
+  workoutStepId?: number | null;
+  stepType: EnumValue<WORKOUT_STEP_TYPE>;
+  durationType: EnumValue<WORKOUT_DURATION_TYPE>;
+  side?: EnumValue<EXERCISE_SIDE> | null;
+  workoutId?: number | null;
+  targets: WorkoutStepTargetDto[];
+  repeatBlock?: {
+    workoutRepeatId?: number | null;
+    repetitions: number;
+    kind?: EnumValue<WORKOUT_REPEAT_KIND>;
+    intervalSeconds?: number | null;
+    timeCapSeconds?: number | null;
+    stepId?: number | null;
+    childSteps: WorkoutStepDto[];
+    createdAt?: Date | null;
+    updatedAt?: Date | null;
+  } | null;
+  childSteps?: WorkoutStepDto[];
+  repeatTimes?: number | null;
+  restTime?: number | null;
+  exerciseName?: string | null;
+};
+
+export const workoutStepSchema: z.ZodType<WorkoutStepDto, WorkoutStepInput> =
+  z.lazy(() =>
+    workoutStepBaseSchema.extend({
+      repeatBlock: z
+        .object({
+          workoutRepeatId: z.number().optional(),
+          repetitions: z.number().min(1).max(99),
+          ...repeatModeFields,
+          stepId: z.number().optional(),
+          childSteps: z.array(workoutStepSchema).default([]),
+          createdAt: z.coerce.date().optional(),
+          updatedAt: z.coerce.date().optional(),
+        })
+        .nullable()
+        .optional(),
+      createdAt: z.coerce.date().optional(),
+      updatedAt: z.coerce.date().optional(),
+    }),
+  );
 
 export const workoutRepeatSchema = z.object({
   workoutRepeatId: z.number().optional(),
@@ -88,7 +151,10 @@ export const workoutRepeatSchema = z.object({
   updatedAt: z.coerce.date().optional(),
 });
 
-export type WorkoutRepeatDto = z.infer<typeof workoutRepeatSchema>;
+export type WorkoutRepeatDto = Omit<
+  z.infer<typeof workoutRepeatSchema>,
+  'kind'
+> & { kind?: EnumValue<WORKOUT_REPEAT_KIND> };
 
 export const workoutSchema = z.object({
   workoutId: z.number().optional(),
@@ -113,14 +179,15 @@ export const createWorkoutStepTargetSchema = workoutStepTargetSchema
   })
   .strict();
 
-export type CreateWorkoutStepTarget = z.infer<
-  typeof createWorkoutStepTargetSchema
->;
+export type CreateWorkoutStepTarget = Omit<
+  z.infer<typeof createWorkoutStepTargetSchema>,
+  'targetType'
+> & { targetType: EnumValue<WORKOUT_TARGET_TYPE> };
 
 export const createWorkoutStepDtoSchema = z
   .lazy(() =>
     z.object({
-      stepType: z.nativeEnum(WORKOUT_STEP_TYPE),
+      stepType: z.enum(WORKOUT_STEP_TYPE),
       name: z.string().nullable().optional(),
       durationType: z
         .nativeEnum(WORKOUT_DURATION_TYPE)
@@ -176,24 +243,24 @@ export const createWorkoutStepDtoSchema = z
         'Repeat blocks cannot be nested. A repeat block cannot contain another repeat block (max depth of 1).',
       path: ['repeatBlock', 'childSteps'],
     },
-  ) as z.ZodSchema<CreateWorkoutStepDto>;
+  ) as z.ZodType<CreateWorkoutStepDto>;
 
 export type CreateWorkoutStepDto = {
-  stepType: WORKOUT_STEP_TYPE;
+  stepType: EnumValue<WORKOUT_STEP_TYPE>;
   name?: string | null;
-  durationType?: WORKOUT_DURATION_TYPE | null;
+  durationType?: EnumValue<WORKOUT_DURATION_TYPE> | null;
   durationValue?: number | null;
   repeatTimes?: number | null;
   restTime?: number | null;
   notes?: string | null;
   exerciseRef?: string | null;
   tempo?: string | null;
-  side?: EXERCISE_SIDE | null;
+  side?: EnumValue<EXERCISE_SIDE> | null;
   targets?: CreateWorkoutStepTarget[];
   childSteps?: CreateWorkoutStepDto[];
   repeatBlock?: {
     repetitions: number;
-    kind?: WORKOUT_REPEAT_KIND;
+    kind?: EnumValue<WORKOUT_REPEAT_KIND>;
     intervalSeconds?: number | null;
     timeCapSeconds?: number | null;
     childSteps: CreateWorkoutStepDto[];

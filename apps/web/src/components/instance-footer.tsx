@@ -10,7 +10,10 @@ export function InstanceFooter() {
         {m.footer_privacy()}
       </a>
       <span aria-hidden="true">·</span>
-      <a href="/source/openathlete.tar.gz" download className={linkClassName}>
+      <a
+        href="https://github.com/GustaTheCreator/openathlete/tree/tourmalet-2026.11.16"
+        className={linkClassName}
+      >
         {m.footer_source()}
       </a>
     </footer>

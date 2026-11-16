@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -13,7 +14,7 @@ import { BadRequestException as BadRequestException2 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
-import { InvitationStatus } from '@openathlete/database';
+import { InvitationStatus, UserRole } from '@openathlete/database';
 import { ApiEnvSchemaType } from '@openathlete/shared';
 
 import { SendEmailEvent } from 'src/events';
@@ -67,11 +68,24 @@ export class AthleteInvitationService {
         firstName: true,
         lastName: true,
         language: true,
+        roles: true,
+        onboardingCompleted: true,
       },
     });
 
     if (!coachUser) {
       throw new NotFoundException('Coach not found');
+    }
+
+    if (!coachUser.onboardingCompleted) {
+      throw new ForbiddenException('Complete onboarding before inviting');
+    }
+
+    if (
+      !Array.isArray(coachUser.roles) ||
+      !coachUser.roles.includes(UserRole.COACH)
+    ) {
+      throw new ForbiddenException('Only coaches can invite athletes');
     }
 
     if (coachUser.email.toLowerCase() === normalizedEmail) {
@@ -367,6 +381,12 @@ export class AthleteInvitationService {
           userId: invitation.userId,
         },
       });
+      if (!athlete.user.roles.includes(UserRole.ATHLETE)) {
+        await tx.user.update({
+          where: { userId: athleteUserId },
+          data: { roles: { push: UserRole.ATHLETE } },
+        });
+      }
     });
     await this.reportLinked(invitation.userId, athlete.athleteId);
   }

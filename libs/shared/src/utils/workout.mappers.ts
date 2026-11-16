@@ -10,7 +10,6 @@ import {
   type CreateWorkoutStepDto,
   type UpdateWorkoutDto,
   type WorkoutDto,
-  type WorkoutRepeatDto,
   type WorkoutStepDto,
   type WorkoutStepTargetDto,
 } from '../types/dtos/core/workout.dto';
@@ -30,6 +29,20 @@ import type {
 // Normalization helpers (camelCase DTOs → clean Create DTOs)
 // ----------------------------------------------------------------------------
 
+type WorkoutStepInputDto = Omit<
+  Partial<WorkoutStepDto>,
+  'childSteps' | 'repeatBlock' | 'durationType'
+> & {
+  durationType?: WorkoutStepDto['durationType'] | null;
+  childSteps?: WorkoutStepInputDto[];
+  repeatTimes?: number | null;
+  repeatBlock?:
+    | (Omit<NonNullable<WorkoutStepDto['repeatBlock']>, 'childSteps'> & {
+        childSteps?: WorkoutStepInputDto[];
+      })
+    | null;
+};
+
 function normalizeTarget(
   target: Partial<WorkoutStepTargetDto>,
 ): WorkoutStepTargetDto {
@@ -47,7 +60,7 @@ function normalizeTarget(
 }
 
 function normalizeStepForCreate(
-  step: Partial<WorkoutStepDto>,
+  step: WorkoutStepInputDto,
 ): CreateWorkoutStepDto {
   const base: CreateWorkoutStepDto = {
     stepType: step.stepType || WORKOUT_STEP_TYPE.STEADY,
@@ -75,7 +88,7 @@ function normalizeStepForCreate(
       intervalSeconds: step.repeatBlock.intervalSeconds ?? null,
       timeCapSeconds: step.repeatBlock.timeCapSeconds ?? null,
       childSteps: (step.repeatBlock.childSteps || []).map(
-        (c: Partial<WorkoutStepDto>) => normalizeStepForCreate(c),
+        (c: WorkoutStepInputDto) => normalizeStepForCreate(c),
       ),
     };
   }
@@ -84,17 +97,17 @@ function normalizeStepForCreate(
   if (!base.repeatBlock && step.childSteps) {
     base.repeatBlock = {
       repetitions: step.repeatTimes || 1,
-      childSteps: (step.childSteps || []).map((c: Partial<WorkoutStepDto>) =>
+      childSteps: (step.childSteps || []).map((c: WorkoutStepInputDto) =>
         normalizeStepForCreate(c),
       ),
-    } as WorkoutRepeatDto;
+    };
   }
 
   return base;
 }
 
 export function normalizeWorkoutForCreate(dto: {
-  steps: Partial<WorkoutStepDto>[];
+  steps: WorkoutStepInputDto[];
 }): CreateWorkoutDto {
   return {
     steps: (dto.steps || []).map((s) => normalizeStepForCreate(s)),
@@ -174,12 +187,14 @@ function mapStepToPrismaCreate(step: CreateWorkoutStepDto, index?: number) {
 }
 
 export function mapWorkoutDtoToPrisma(
-  data: CreateWorkoutDto | UpdateWorkoutDto,
+  data: CreateWorkoutDto | UpdateWorkoutDto | { steps: WorkoutStepInputDto[] },
 ) {
   if (!('steps' in data) || !data.steps) return {};
   return {
     steps: {
-      create: data.steps.map((s, idx) => mapStepToPrismaCreate(s, idx)),
+      create: data.steps.map((step, index) =>
+        mapStepToPrismaCreate(normalizeStepForCreate(step), index),
+      ),
     },
   };
 }
@@ -298,11 +313,11 @@ function flattenStep(
   );
 
   const normalized: NormalizedWorkoutStep = {
-    orderIndex: step.orderIndex,
-    stepType: step.stepType,
+    orderIndex: step.orderIndex ?? 0,
+    stepType: step.stepType ?? WORKOUT_STEP_TYPE.STEADY,
     name: step.name ?? null,
     notes: step.notes ?? null,
-    durationType: step.durationType,
+    durationType: step.durationType ?? WORKOUT_DURATION_TYPE.OPEN,
     durationValue: step.durationValue ?? null,
     durationTarget: step.durationTarget ?? null,
     targets,

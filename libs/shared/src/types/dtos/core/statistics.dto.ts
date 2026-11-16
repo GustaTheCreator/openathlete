@@ -39,7 +39,7 @@ const statisticsPeriodSchema = z.object({
   athleteId: z.coerce.number().int().positive(),
   from: z.coerce.date(),
   to: z.coerce.date(),
-  sport: z.nativeEnum(SPORT_TYPE).optional(),
+  sport: z.enum(SPORT_TYPE).optional(),
   group: sportGroupSchema.optional(),
 });
 
@@ -85,7 +85,7 @@ export type GetStatisticsFiltersQueryDto = z.infer<
 export const statisticsFiltersSchema = z.object({
   firstActivityDate: z.coerce.date().nullable(),
   /** Sports of the athlete, the most practised first */
-  sports: z.array(z.nativeEnum(SPORT_TYPE)),
+  sports: z.array(z.enum(SPORT_TYPE)),
 });
 export type StatisticsFiltersDto = z.infer<typeof statisticsFiltersSchema>;
 
@@ -106,9 +106,7 @@ export const statisticsOverviewSchema = z.object({
   totals: statisticsTotalsSchema,
   /** Totals of the compared period, null without one */
   compared: statisticsTotalsSchema.nullable(),
-  sports: z.array(
-    statisticsTotalsSchema.extend({ sport: z.nativeEnum(SPORT_TYPE) }),
-  ),
+  sports: z.array(statisticsTotalsSchema.extend({ sport: z.enum(SPORT_TYPE) })),
 });
 export type StatisticsOverviewDto = z.infer<typeof statisticsOverviewSchema>;
 
@@ -126,7 +124,7 @@ export const statisticsVolumeSchema = z.object({
       sports: z.array(
         statisticsTotalsSchema
           .omit({ load: true })
-          .extend({ sport: z.nativeEnum(SPORT_TYPE) }),
+          .extend({ sport: z.enum(SPORT_TYPE) }),
       ),
     }),
   ),

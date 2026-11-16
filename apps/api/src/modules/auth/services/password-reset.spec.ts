@@ -64,12 +64,14 @@ describe('password reset request', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it('logs the link for the administrator without email', async () => {
+  it('never logs a recovery credential when email is unavailable', async () => {
     const { service, emitter } = setup({ APP_URL: 'http://localhost' });
     await service.passwordResetRequest({ email: 'ana@example.com' });
     expect(emitter.emit).not.toHaveBeenCalled();
     const [message] = warn.mock.calls[0] as [string];
-    expect(message).toContain('http://localhost/auth/password-reset?token=tok');
+    expect(message).toContain('email transport is not configured');
+    expect(message).not.toContain('token=');
+    expect(message).not.toContain('http://localhost');
     // Never the full address in the logs
     expect(message).not.toContain('ana@example.com');
   });

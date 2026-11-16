@@ -19,6 +19,8 @@ model User {
   email               String       @unique
   /// Hashed password for authentication
   password            String
+  /// Invalidates credentials issued before a password reset, including concurrent sign-ins.
+  sessionVersion      Int          @default(0) @map("session_version")
   /// User roles: ATHLETE (can have athlete profile), COACH (can coach athletes)
   roles               UserRole[]
   /// User's first name
@@ -74,6 +76,7 @@ model User {
   athlete                   Athlete?
   coachAthletes             CoachAthlete[]
   tokens                    Token[]
+  authSessions              AuthSession[]
   templates                 EventTemplate[]
   agentThreads              AgentThread[]
   aiCredentials             AiCredential[]
@@ -103,6 +106,20 @@ model User {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("user")
+}
+
+/// Revocable per-device sessions; the refresh credential is stored only as a hash.
+model AuthSession {
+  id               String   @id @db.Uuid
+  userId           Int      @map("user_id")
+  refreshTokenHash String   @map("refresh_token_hash")
+  expiresAt        DateTime @map("expires_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  user             User     @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("auth_session")
 }
 
 /// External provider account connection (Strava, Garmin, Suunto, etc.).

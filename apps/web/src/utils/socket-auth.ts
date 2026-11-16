@@ -1,23 +1,13 @@
 import type { Socket } from 'socket.io-client';
 
 import { getAccessToken, isValidToken, refreshToken } from './auth';
-import { ACCESS_TOKEN, REFRESH_TOKEN, setItem } from './local-storage';
 
 const EXPIRY_CHECK_INTERVAL = 60 * 1000;
-
-type TokenInfo = Awaited<ReturnType<typeof getAccessToken>>;
 
 export type SocketAuthentication = {
   /** Reconnects with a fresh token when the one of the handshake expired. */
   reconnectIfExpired: () => void;
   stop: () => void;
-};
-
-const storeTokens = (info: TokenInfo) => {
-  if (info?.refreshToken) {
-    setItem(ACCESS_TOKEN, info.accessToken);
-    setItem(REFRESH_TOKEN, info.refreshToken);
-  }
 };
 
 /**
@@ -29,54 +19,77 @@ const storeTokens = (info: TokenInfo) => {
  */
 export function keepSocketAuthenticated(socket: Socket): SocketAuthentication {
   let handshakeToken: string | null = null;
-  let refreshing = false;
+  let active = true;
+  let refreshInFlight: Promise<void> | null = null;
 
   socket.auth = (send) => {
     void getAccessToken()
       .catch(() => null)
       .then((info) => {
-        storeTokens(info);
         handshakeToken = info?.accessToken ?? null;
         send({ token: handshakeToken ?? '' });
       });
   };
 
   const reconnectIfExpired = () => {
-    if (socket.connected && handshakeToken && !isValidToken(handshakeToken)) {
+    if (
+      active &&
+      socket.connected &&
+      handshakeToken &&
+      !isValidToken(handshakeToken)
+    ) {
       socket.disconnect().connect();
     }
   };
 
-  // The server refused an event because the token expired, whatever the
-  // device's clock says. Reconnecting only with a new token avoids a loop
-  // once the refresh token is no longer valid.
+  // The server can detect expiry before the device's clock. Event refusals
+  // and server disconnects share one refresh so simultaneous signals cannot
+  // race or reconnect with the same expired token.
+  const refreshAndReconnect = () => {
+    if (!active || refreshInFlight) return;
+
+    refreshInFlight = refreshToken(true)
+      .catch(() => null)
+      .then((info) => {
+        if (!active || !info || info.accessToken === handshakeToken) return;
+        if (socket.connected) {
+          socket.disconnect().connect();
+        } else {
+          socket.connect();
+        }
+      })
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  };
+
   const onException = (error: { message?: unknown }) => {
     if (
-      refreshing ||
+      !active ||
       typeof error?.message !== 'string' ||
       !error.message.includes('jwt expired')
     ) {
       return;
     }
-    refreshing = true;
-    void refreshToken()
-      .catch(() => null)
-      .then((info) => {
-        refreshing = false;
-        if (!info || info.accessToken === handshakeToken) return;
-        storeTokens(info);
-        socket.disconnect().connect();
-      });
+    refreshAndReconnect();
   };
+
+  const onDisconnect = (reason: string) => {
+    if (reason === 'io server disconnect') refreshAndReconnect();
+  };
+
   socket.on('exception', onException);
+  socket.on('disconnect', onDisconnect);
 
   const interval = setInterval(reconnectIfExpired, EXPIRY_CHECK_INTERVAL);
 
   return {
     reconnectIfExpired,
     stop: () => {
+      active = false;
       clearInterval(interval);
       socket.off('exception', onException);
+      socket.off('disconnect', onDisconnect);
     },
   };
 }

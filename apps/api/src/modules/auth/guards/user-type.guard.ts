@@ -27,6 +27,10 @@ export class UserTypeGuard implements CanActivate {
 
     const userRoles = user.roles;
 
-    return userTypes?.some((type) => userRoles.includes(type));
+    if (!Array.isArray(userRoles)) {
+      return false;
+    }
+
+    return userTypes.some((type) => userRoles.includes(type));
   }
 }

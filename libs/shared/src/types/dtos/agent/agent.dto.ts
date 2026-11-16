@@ -84,18 +84,18 @@ export const createBlockDtoSchema = z.object({
   type: AgentBlockType,
   order: z.number().int().min(0),
   content: z.string(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   status: AgentBlockStatus.optional().default('completed'),
   error: z.string().optional(),
 
   // Tool-specific fields
   toolName: z.string().optional(),
-  toolInput: z.record(z.unknown()).optional(),
-  toolOutput: z.record(z.unknown()).optional(),
+  toolInput: z.record(z.string(), z.unknown()).optional(),
+  toolOutput: z.record(z.string(), z.unknown()).optional(),
 
   // Chart-specific fields
   chartType: z.string().optional(),
-  chartData: z.record(z.unknown()).optional(),
+  chartData: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const updateBlockDtoSchema = createBlockDtoSchema
@@ -108,12 +108,12 @@ export type UpdateBlockDto = z.infer<typeof updateBlockDtoSchema>;
 // Thread DTOs
 export const createThreadDtoSchema = z.object({
   title: z.string().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const updateThreadDtoSchema = z.object({
   title: z.string().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type CreateThreadDto = z.infer<typeof createThreadDtoSchema>;
@@ -123,13 +123,13 @@ export type UpdateThreadDto = z.infer<typeof updateThreadDtoSchema>;
 export const createMessageDtoSchema = z.object({
   threadId: z.number(),
   role: AgentMessageRole.optional().default('USER'),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   blocks: z.array(createBlockDtoSchema).optional(),
 });
 
 export const sendMessageDtoSchema = z.object({
   content: z.string(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type CreateMessageDto = z.infer<typeof createMessageDtoSchema>;

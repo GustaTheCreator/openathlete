@@ -5,12 +5,7 @@ import type { ApiEnvSchemaType } from '@openathlete/shared';
 
 export type HostedAccessPolicy = 'subscribers' | 'everyone' | 'none';
 
-/**
- * Instance-wide AI rules. Without Stripe (self-hosted instances) the operator
- * shares their keys with everyone and may allow local endpoints; with Stripe
- * (the hosted instance) instance keys are a paid feature and the server never
- * calls user-provided URLs.
- */
+/** Instance-wide AI rules. Custom endpoints require an explicit operator opt-in. */
 @Injectable()
 export class AiPolicyService {
   constructor(
@@ -35,9 +30,6 @@ export class AiPolicyService {
 
   /** Users may add OpenAI-compatible endpoints and local providers. */
   get customEndpointsAllowed(): boolean {
-    return (
-      this.configService.get('AI_ALLOW_CUSTOM_ENDPOINTS') ??
-      !this.billingEnabled
-    );
+    return this.configService.get('AI_ALLOW_CUSTOM_ENDPOINTS') ?? false;
   }
 }

@@ -1,10 +1,10 @@
 import { UserAPI } from '@/api/user';
 import { getPath } from '@/routes/paths';
-import { isValidToken } from '@/utils/auth';
+import { clearAuthTokens, logoutAuthSession } from '@/utils/auth';
 import { isNetworkError } from '@/utils/axios';
 import { signOutFirebase } from '@/utils/firebase-auth';
 import { saveLanguageChoice } from '@/utils/language-choice';
-import { ACCESS_TOKEN, clear, getItem, setItem } from '@/utils/local-storage';
+import { clear } from '@/utils/local-storage';
 import { initializePushNotifications } from '@/utils/push-notifications';
 import { queryClient } from '@/utils/query-client';
 import { saveTimeZone } from '@/utils/time-zone';
@@ -82,94 +82,64 @@ export function AuthProvider({ children }: Props) {
       );
 
     try {
-      const accessToken = getItem(ACCESS_TOKEN);
+      const user = await UserAPI.getMe();
 
-      if (accessToken && isValidToken(accessToken)) {
-        setItem(ACCESS_TOKEN, accessToken);
+      await saveLanguageChoice(user.language);
+      // Not awaited: reminders can wait, the app should not
+      void saveTimeZone(user.timeZone);
 
-        const user = await UserAPI.getMe();
+      dispatch({
+        type: Types.INITIAL,
+        payload: {
+          user,
+        },
+      });
 
-        await saveLanguageChoice(user.language);
-        // Not awaited: reminders can wait, the app should not
-        void saveTimeZone(user.timeZone);
-
-        dispatch({
-          type: Types.INITIAL,
-          payload: {
-            user,
-          },
-        });
-
-        // Initialize push notifications and send any pending token
-        initializePushNotifications()
-          .then(() => {
-            // Import dynamically to avoid circular dependency
-            import('@/utils/push-notifications').then(
-              ({ sendPendingTokenIfAny }) => {
-                sendPendingTokenIfAny();
-              },
-            );
-          })
-          .catch((error) => {
-            console.error('Failed to initialize push notifications:', error);
-          });
-      } else {
-        try {
-          const user = await UserAPI.getMe();
-
-          await saveLanguageChoice(user.language);
-          // Not awaited: reminders can wait, the app should not
-          void saveTimeZone(user.timeZone);
-
-          dispatch({
-            type: Types.INITIAL,
-            payload: {
-              user,
+      // Initialize push notifications and send any pending token
+      initializePushNotifications()
+        .then(() => {
+          // Import dynamically to avoid circular dependency
+          import('@/utils/push-notifications').then(
+            ({ sendPendingTokenIfAny }) => {
+              sendPendingTokenIfAny();
             },
-          });
-
-          // Initialize push notifications and send any pending token
-          initializePushNotifications()
-            .then(() => {
-              // Import dynamically to avoid circular dependency
-              import('@/utils/push-notifications').then(
-                ({ sendPendingTokenIfAny }) => {
-                  sendPendingTokenIfAny();
-                },
-              );
-            })
-            .catch((error) => {
-              console.error('Failed to initialize push notifications:', error);
-            });
-        } catch (error) {
-          signedOutOrOffline(error);
-        }
-      }
+          );
+        })
+        .catch((error) => {
+          console.error('Failed to initialize push notifications:', error);
+        });
     } catch (error) {
       signedOutOrOffline(error);
     }
   }, []);
 
   const logout = useCallback((navigate?: (path: string) => void) => {
-    posthog.capture('user_logged_out');
-    posthog.reset();
-    clear();
-    // The cache outlives an in-app logout. The next account to sign in on
-    // this tab would get this one's data, including the profile that tells
-    // the guard whether to send a new account to the onboarding.
-    queryClient.clear();
-    signOutFirebase().catch((error) => {
-      console.error('Failed to sign out Firebase:', error);
-    });
-    dispatch({
-      type: Types.LOGOUT,
-    });
-    const loginPath = getPath(['auth', 'login']);
-    if (navigate) {
-      navigate(loginPath);
-    } else {
-      window.location.href = loginPath;
-    }
+    void logoutAuthSession()
+      .catch((error) => {
+        console.error('Failed to revoke the server session:', error);
+      })
+      .finally(() => {
+        posthog.capture('user_logged_out');
+        posthog.reset();
+        clearAuthTokens();
+        clear();
+        // The cache outlives an in-app logout. The next account to sign in on
+        // this tab would get this one's data, including the profile that tells
+        // the guard whether to send a new account to the onboarding.
+        queryClient.clear();
+        signOutFirebase().catch((error) => {
+          console.error('Failed to sign out Firebase:', error);
+        });
+        dispatch({
+          type: Types.LOGOUT,
+        });
+        const loginPath = getPath(['auth', 'login']);
+        if (navigate) {
+          navigate(loginPath);
+        } else {
+          window.location.href = loginPath;
+        }
+      });
   }, []);
 
   useEffect(() => {

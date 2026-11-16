@@ -284,7 +284,7 @@ export const registerAthleteWriteTools: ToolRegistrar = (server, ctx, deps) => {
         entries: z
           .array(
             z.object({
-              type: z.nativeEnum(MetricType),
+              type: z.enum(MetricType),
               value: z.number().finite(),
               date: localDate.optional().describe('Default: today'),
               notes: z.string().max(500).optional(),

@@ -184,7 +184,7 @@ export interface TestAiCredentialResponseDto {
 }
 
 export const aiModelPreferenceSchema = z.object({
-  task: z.nativeEnum(AiTask),
+  task: z.enum(AiTask),
   aiCredentialId: z.number().int().positive(),
   modelId: z.string().trim().min(1).max(200),
 });

@@ -19,10 +19,7 @@ import { RHFElevation } from '../../hook-form/rhf-elevation';
 import { RHFRpe } from '../../hook-form/rhf-rpe';
 import { RHFTextarea } from '../../hook-form/rhf-textarea';
 import { SelectItem } from '../../ui/select';
-import {
-  type EventFormValues,
-  NO_EQUIPMENT,
-} from '../utils/event-form-schemas';
+import { type EventFormInput, NO_EQUIPMENT } from '../utils/event-form-schemas';
 import { CompetitionPriorityField } from './competition-priority-field';
 
 type Props = {
@@ -39,7 +36,7 @@ type Props = {
   canChooseEquipment?: boolean;
   goalDistanceValue?: number | null;
   goalDurationValue?: number | null;
-  setValue: UseFormSetValue<EventFormValues>;
+  setValue: UseFormSetValue<EventFormInput>;
   isTemplate?: boolean;
   /** A new activity logged by hand: its duration, distance and elevation */
   logging?: boolean;

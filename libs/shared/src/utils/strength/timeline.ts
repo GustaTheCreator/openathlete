@@ -38,7 +38,7 @@ export interface WorkMoment {
   load: number | null;
   rpe: number | null;
   tempo: string | null;
-  side: EXERCISE_SIDE | null;
+  side: `${EXERCISE_SIDE}` | null;
   notes: string | null;
   /** Set number and count of this exercise, from 1 */
   set: number;
@@ -48,7 +48,7 @@ export interface WorkMoment {
   rounds: number | null;
   group: WORKOUT_REPEAT_KIND | null;
   /** A step of another kind than an exercise (warm-up jog...) */
-  stepType: WORKOUT_STEP_TYPE | null;
+  stepType: `${WORKOUT_STEP_TYPE}` | null;
 }
 
 export interface RestMoment {

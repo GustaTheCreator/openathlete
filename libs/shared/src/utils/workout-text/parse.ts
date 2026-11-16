@@ -1,6 +1,7 @@
 import type {
   CreateWorkoutStepDto,
   CreateWorkoutStepTarget,
+  WorkoutStepType,
 } from '../../types/dtos/core/workout.dto';
 import {
   TRAINING_ZONE_TYPE,
@@ -840,7 +841,7 @@ function build(
   nodes: Node[],
   zones: WorkoutTextZone[],
   parent: 'top' | 'repeat',
-  fixedType?: WORKOUT_STEP_TYPE,
+  fixedType?: WorkoutStepType,
 ): CreateWorkoutStepDto[] {
   const shapes = nodes.map((node) =>
     node.kind === 'repeat'

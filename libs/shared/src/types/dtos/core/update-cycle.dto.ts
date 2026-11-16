@@ -12,7 +12,7 @@ export const updateCycleDtoSchema = z.object({
     .regex(/^#[0-9A-Fa-f]{6}$/)
     .optional()
     .nullable(),
-  kind: z.nativeEnum(CYCLE_KIND).optional(),
+  kind: z.enum(CYCLE_KIND).optional(),
 });
 
 export type UpdateCycleDto = z.infer<typeof updateCycleDtoSchema>;

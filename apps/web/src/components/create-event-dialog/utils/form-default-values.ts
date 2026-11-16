@@ -1,7 +1,7 @@
 import { EVENT_TYPE, Event, SPORT_TYPE } from '@openathlete/shared';
 import type { CreateEventDto } from '@openathlete/shared';
 
-import { type EventFormValues, NO_EQUIPMENT } from './event-form-schemas';
+import { type EventFormInput, NO_EQUIPMENT } from './event-form-schemas';
 
 type CreateProps = {
   date?: Date;
@@ -19,7 +19,7 @@ export function getFormDefaultValues(
   props: Props,
   startDate?: Date,
   endDate?: Date,
-): EventFormValues | undefined {
+): EventFormInput | undefined {
   const edit = 'event' in props;
   const create = 'type' in props && 'date' in props;
 
@@ -30,7 +30,7 @@ export function getFormDefaultValues(
       description: props.event.description ?? '',
       startDate: props.event.startDate,
       endDate: props.event.endDate,
-    } as EventFormValues;
+    } as EventFormInput;
 
     if (props.event.type === EVENT_TYPE.TRAINING) {
       return {
@@ -40,7 +40,7 @@ export function getFormDefaultValues(
         goalDuration: props.event.goalDuration ?? null,
         goalElevationGain: props.event.goalElevationGain ?? null,
         goalRpe: props.event.goalRpe ?? null,
-      } as EventFormValues;
+      } as EventFormInput;
     }
 
     if (props.event.type === EVENT_TYPE.COMPETITION) {
@@ -52,7 +52,7 @@ export function getFormDefaultValues(
         goalElevationGain: props.event.goalElevationGain ?? null,
         goalRpe: props.event.goalRpe ?? null,
         priority: props.event.priority ?? null,
-      } as EventFormValues;
+      } as EventFormInput;
     }
 
     if (props.event.type === EVENT_TYPE.ACTIVITY) {
@@ -64,7 +64,7 @@ export function getFormDefaultValues(
           ? String(props.event.equipmentId)
           : NO_EQUIPMENT,
         isRace: props.event.isRace,
-      } as EventFormValues;
+      } as EventFormInput;
     }
 
     return base;
@@ -78,7 +78,7 @@ export function getFormDefaultValues(
       description: prefilled.description ?? '',
       startDate: prefilled.startDate,
       endDate: prefilled.endDate,
-    } as EventFormValues;
+    } as EventFormInput;
 
     if (prefilled.type === EVENT_TYPE.TRAINING) {
       return {
@@ -88,7 +88,7 @@ export function getFormDefaultValues(
         goalDuration: prefilled.goalDuration ?? null,
         goalElevationGain: prefilled.goalElevationGain ?? null,
         goalRpe: prefilled.goalRpe ?? null,
-      } as EventFormValues;
+      } as EventFormInput;
     }
 
     if (prefilled.type === EVENT_TYPE.COMPETITION) {
@@ -100,7 +100,7 @@ export function getFormDefaultValues(
         goalElevationGain: prefilled.goalElevationGain ?? null,
         goalRpe: prefilled.goalRpe ?? null,
         priority: prefilled.priority ?? null,
-      } as EventFormValues;
+      } as EventFormInput;
     }
 
     if (prefilled.type === EVENT_TYPE.ACTIVITY) {
@@ -108,7 +108,7 @@ export function getFormDefaultValues(
         ...base,
         sport: prefilled.sport,
         rpe: prefilled.rpe ?? null,
-      } as EventFormValues;
+      } as EventFormInput;
     }
 
     return base;

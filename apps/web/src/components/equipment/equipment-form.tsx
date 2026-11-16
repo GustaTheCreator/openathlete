@@ -1,6 +1,7 @@
 import { m } from '@/paraglide/messages';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
+import { z } from 'zod';
 
 import {
   CreateEquipmentDto,
@@ -31,7 +32,11 @@ export function EquipmentForm({
   className,
   isLoading,
 }: P) {
-  const methods = useForm<CreateEquipmentDto>({
+  const methods = useForm<
+    z.input<typeof createEquipmentDtoSchema>,
+    unknown,
+    CreateEquipmentDto
+  >({
     resolver: zodResolver(createEquipmentDtoSchema),
     defaultValues: defaultValues || {
       name: '',

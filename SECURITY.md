@@ -1,37 +1,20 @@
-# Security Policy
+# Security
 
-OpenAthlete stores health and training data, so we take security reports
-seriously and appreciate responsible disclosure.
+Report vulnerabilities privately through this repository's **Security → Report a vulnerability** feature. Do not put credentials, athlete data or production database copies in public issues or pull requests. Secret scanning and push protection are enabled for this fork.
 
-## Reporting a vulnerability
+## Session and permission changes
 
-**Do not open a public issue for security problems.**
+- Browser/PWA access tokens stay in memory. Refresh credentials use a host-only `HttpOnly` cookie, with `Secure` on HTTPS and `SameSite=Lax`; refresh and logout also check the configured origin and a CSRF token. Browser responses do not expose the refresh credential.
+- Optional native builds keep access and refresh credentials in memory and preserve the bearer API protocol. They require a new login after the app process restarts. Adding persistent native sign-in would require an OS-backed secure store; localStorage is not used for session tokens.
+- Sessions are recorded per device, refresh credentials are stored as hashes and rotated atomically, and reuse revokes the session. Logout revokes that device; password reset changes the credential version and revokes the user's app sessions. WebSockets close when a token expires or a session is revoked.
+- Invitation issuance requires a persisted coach role and completed onboarding. Invitation types grant the corresponding role; onboarding may select only from roles already granted by the server. Any registered coach may invite, rather than an owner-only rule.
+- Custom AI URLs are disabled by default. Enabling arbitrary/local endpoints is an explicit operator trust decision.
+- The web proxy redirects HTTP reported by a trusted edge to HTTPS, sends HSTS on HTML responses, and omits URLs and referrers from its access log. HTML has a Content Security Policy and is not cached. The service worker caches the app shell and hashed assets, not API responses.
 
-Report privately through GitHub:
-[Report a vulnerability](https://github.com/openathleteorg/openathlete/security/advisories/new).
+Legacy JWTs are intentionally invalidated by this release. Sign in again after upgrading. Browser/PWA refresh cookies retain the normal return-to-session flow; the native memory-only restriction is separate.
 
-Please include:
+## Dependency advisory still visible
 
-- the affected component (API, web app, mobile app, self-hosted deployment)
-- steps to reproduce or a proof of concept
-- the impact you observed or expect
+As of 2026-11-16, the dependency audit still reports [GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4) for `deepmerge@4.3.1`. It is a low-severity finding in development tooling used by Nest CLI/Jest; no production dependency path or application call receiving untrusted data was identified. No patched upstream release was available. The finding is retained in audit output rather than suppressed or hidden by a version alias. Recheck it when updating the toolchain and build only trusted projects.
 
-We aim to acknowledge reports within 3 business days and to keep you
-updated until a fix is released. We will credit you in the advisory unless
-you prefer to stay anonymous.
-
-## Supported versions
-
-Security fixes land on `main`, which is what the hosted service at
-[app.openathlete.org](https://app.openathlete.org) runs. Self-hosted
-instances should track the latest `main` (or the latest release once
-releases are published).
-
-## Scope
-
-In scope: this repository's code and its default deployment configuration
-(`docker-compose.yml`, `docker-compose.coolify.yml`, Dockerfiles).
-
-Out of scope: denial of service through traffic volume, findings that
-require a compromised device or account, and issues in third-party services
-(Strava, Garmin, etc.) that should be reported to them.
+This is a scoped hardening effort, not a guarantee that the program has no vulnerabilities. Keep deployment secrets private, install security updates, maintain backups and grant access only to appropriate users.

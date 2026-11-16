@@ -173,7 +173,7 @@ function needsQuotes(name: string, sport: SPORT_TYPE): boolean {
 
 function formatStep(
   step: CreateWorkoutStepDto,
-  inferred: WORKOUT_STEP_TYPE,
+  inferred: `${WORKOUT_STEP_TYPE}`,
   options: Required<Pick<WorkoutTextSerializeOptions, 'locale'>> &
     WorkoutTextSerializeOptions,
 ): string {

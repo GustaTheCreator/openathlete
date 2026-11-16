@@ -20,7 +20,7 @@ export type ElevationGainRange = z.infer<typeof elevationGainRangeSchema>;
 const planSessionSchema = z.object({
   dayOfWeek: z.number().min(0).max(6), // 0-6 (sunday-saturday)
   name: z.string().min(1),
-  sport: z.nativeEnum(SPORT_TYPE),
+  sport: z.enum(SPORT_TYPE),
   description: z.string(),
   goalDistance: z.number().optional().nullable(),
   goalDuration: z.number().optional().nullable(), // seconds
@@ -47,7 +47,7 @@ export type PlanWeek = z.infer<typeof planWeekSchema>;
 const planCycleSchema = z.object({
   name: z.string().min(1),
   description: z.string(),
-  phase: z.nativeEnum(CYCLE_PHASE),
+  phase: z.enum(CYCLE_PHASE),
   color: z.string().optional().nullable(),
   weeks: z.array(planWeekSchema),
 });
@@ -58,7 +58,7 @@ const planInfoSchema = z.object({
   name: z.string().min(1),
   description: z.string(),
   goal: z.string().min(1),
-  sportType: z.nativeEnum(SPORT_TYPE),
+  sportType: z.enum(SPORT_TYPE),
   distance: z.number(), // meters
   duration: z.number().min(1), // total duration in weeks
   // For running/triathlon : time target in seconds (ex: 16200 for 4h30)

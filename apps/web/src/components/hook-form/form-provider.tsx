@@ -4,7 +4,11 @@ import {
   UseFormReturn,
 } from 'react-hook-form';
 
-export const FormProvider = <T extends FieldValues>({
+export const FormProvider = <
+  T extends FieldValues,
+  TContext = unknown,
+  TTransformedValues = T,
+>({
   children,
   onSubmit,
   methods,
@@ -12,7 +16,7 @@ export const FormProvider = <T extends FieldValues>({
   ...formElementProps
 }: {
   children: React.ReactNode;
-  methods: UseFormReturn<T>;
+  methods: UseFormReturn<T, TContext, TTransformedValues>;
   onSubmit?: (e?: React.BaseSyntheticEvent) => Promise<void> | void;
   id?: string;
 } & React.HTMLAttributes<HTMLFormElement>) => {

@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 
 const importPlanFormSchema = z.object({
   startDate: z.coerce.date({
-    required_error: m.start_date_required(),
+    error: m.start_date_required(),
   }),
 });
 
@@ -33,7 +33,11 @@ export function ImportPlanDialog({
   planToken,
   planName,
 }: ImportPlanDialogProps) {
-  const methods = useForm<ImportPlanFormValues>({
+  const methods = useForm<
+    z.input<typeof importPlanFormSchema>,
+    unknown,
+    ImportPlanFormValues
+  >({
     resolver: zodResolver(importPlanFormSchema),
     defaultValues: {
       startDate: new Date(),

@@ -33,6 +33,7 @@ import { FormProvider, useForm } from 'react-hook-form';
 import { z } from 'zod';
 
 import type { WorkoutStepTargetDto } from '@openathlete/shared';
+import type { WorkoutTargetType } from '@openathlete/shared';
 import {
   SPORT_TYPE,
   WORKOUT_TARGET_TYPE,
@@ -57,40 +58,48 @@ const getDefaultVelocityUnit = (sport?: SPORT_TYPE): VelocityUnit => {
   }
 };
 
-const TARGET_TYPES: { value: WORKOUT_TARGET_TYPE; getLabelFn: () => string }[] =
-  [
-    {
-      value: WORKOUT_TARGET_TYPE.PACE,
-      getLabelFn: () => m.target_form_type_pace(),
-    },
-    {
-      value: WORKOUT_TARGET_TYPE.HEARTRATE,
-      getLabelFn: () => m.target_form_type_heartrate(),
-    },
-    {
-      value: WORKOUT_TARGET_TYPE.POWER,
-      getLabelFn: () => m.target_form_type_power(),
-    },
-    {
-      value: WORKOUT_TARGET_TYPE.CADENCE,
-      getLabelFn: () => m.target_form_type_cadence(),
-    },
-    {
-      value: WORKOUT_TARGET_TYPE.WEIGHT,
-      getLabelFn: () => m.target_form_type_weight(),
-    },
-    {
-      value: WORKOUT_TARGET_TYPE.ZONE,
-      getLabelFn: () => m.target_form_type_zone(),
-    },
-    {
-      value: WORKOUT_TARGET_TYPE.RPE,
-      getLabelFn: () => m.target_form_type_rpe(),
-    },
-  ];
+const TARGET_TYPES: { value: WorkoutTargetType; getLabelFn: () => string }[] = [
+  {
+    value: WORKOUT_TARGET_TYPE.PACE,
+    getLabelFn: () => m.target_form_type_pace(),
+  },
+  {
+    value: WORKOUT_TARGET_TYPE.HEARTRATE,
+    getLabelFn: () => m.target_form_type_heartrate(),
+  },
+  {
+    value: WORKOUT_TARGET_TYPE.POWER,
+    getLabelFn: () => m.target_form_type_power(),
+  },
+  {
+    value: WORKOUT_TARGET_TYPE.CADENCE,
+    getLabelFn: () => m.target_form_type_cadence(),
+  },
+  {
+    value: WORKOUT_TARGET_TYPE.WEIGHT,
+    getLabelFn: () => m.target_form_type_weight(),
+  },
+  {
+    value: WORKOUT_TARGET_TYPE.ZONE,
+    getLabelFn: () => m.target_form_type_zone(),
+  },
+  {
+    value: WORKOUT_TARGET_TYPE.RPE,
+    getLabelFn: () => m.target_form_type_rpe(),
+  },
+];
 
 const targetFormSchema = z.object({
-  targetType: z.nativeEnum(WORKOUT_TARGET_TYPE),
+  targetType: z.enum([
+    'OPEN',
+    'PACE',
+    'HEARTRATE',
+    'POWER',
+    'CADENCE',
+    'RPE',
+    'WEIGHT',
+    'ZONE',
+  ]),
   targetMin: z.number().nullable().optional(),
   targetMax: z.number().nullable().optional(),
   targetValue: z.number().nullable().optional(),
@@ -193,7 +202,11 @@ export function TargetForm({
     return value / 100;
   };
 
-  const form = useForm<TargetFormValues>({
+  const form = useForm<
+    z.input<typeof targetFormSchema>,
+    unknown,
+    z.output<typeof targetFormSchema>
+  >({
     resolver: zodResolver(targetFormSchema),
     defaultValues: {
       targetType: initialValues?.targetType || WORKOUT_TARGET_TYPE.HEARTRATE,

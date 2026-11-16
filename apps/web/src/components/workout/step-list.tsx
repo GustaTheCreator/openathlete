@@ -18,6 +18,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { GripVertical } from 'lucide-react';
 
 import type {
+  CreateWorkoutStepDto,
   SPORT_TYPE,
   StepZoneLike,
   WorkoutStepDto as WorkoutStep,
@@ -37,7 +38,7 @@ interface StepListProps {
   onUpdateRepeatBlock?: (step: WorkoutStep) => void;
   onAddChildStep?: (
     parentStepId: number,
-    childStep: Omit<WorkoutStep, 'workoutStepId'>,
+    childStep: CreateWorkoutStepDto,
   ) => void;
   onEditChildStep?: (parentStepId: number, childStep: WorkoutStep) => void;
   onDeleteChildStep?: (parentStepId: number, childStepId: number) => void;
@@ -54,7 +55,7 @@ interface SortableStepItemProps {
   onUpdateRepeatBlock?: (step: WorkoutStep) => void;
   onAddChildStep?: (
     parentStepId: number,
-    childStep: Omit<WorkoutStep, 'workoutStepId'>,
+    childStep: CreateWorkoutStepDto,
   ) => void;
   onEditChildStep?: (parentStepId: number, childStep: WorkoutStep) => void;
   onDeleteChildStep?: (parentStepId: number, childStepId: number) => void;

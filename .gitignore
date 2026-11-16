@@ -38,6 +38,7 @@ scripts/**/assets
 
 # App
 **/.env
+**/.env.*
 !**/.env.example
 **/node_modules
 **/dist
@@ -61,3 +62,10 @@ lab
 repomix-output.xml
 .scannerwork
 graphify-out/
+
+# Private deployment state must never enter a source release.
+backups/
+.cloudflared/
+*.p12
+*.pfx
+*.key

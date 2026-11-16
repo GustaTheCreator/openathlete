@@ -13,9 +13,9 @@ const now = 'now()';
 
 export const accountFixtureSql = [
   // Users and athletes
-  `INSERT INTO "user" (user_id, email, password, first_name, last_name, updated_at) VALUES
-    (1001, 'athlete@example.com', 'x', 'Ath', 'Lete', ${now}),
-    (1002, 'coach@example.com', 'x', 'Co', 'Ach', ${now})`,
+  `INSERT INTO "user" (user_id, email, password, first_name, last_name, roles, onboarding_completed, updated_at) VALUES
+    (1001, 'athlete@example.com', 'x', 'Ath', 'Lete', '{ATHLETE}', true, ${now}),
+    (1002, 'coach@example.com', 'x', 'Co', 'Ach', '{COACH}', true, ${now})`,
   `INSERT INTO athlete (athlete_id, user_id, updated_at) VALUES (2001, 1001, ${now}), (2002, 1002, ${now})`,
   `INSERT INTO athlete_settings (athlete_id, updated_at) VALUES (2001, ${now})`,
   `INSERT INTO athlete_metric (type, date, value, athlete_id, updated_at) VALUES ('WEIGHT', '2026-01-01', 70, 2001, ${now})`,

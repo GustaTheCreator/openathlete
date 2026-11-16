@@ -12,7 +12,7 @@ const baseEventUpdateSchema = z.object({
 
 const trainingEventUpdateSchema = baseEventUpdateSchema.extend({
   type: z.literal(EVENT_TYPE.TRAINING).optional(),
-  sport: z.nativeEnum(SPORT_TYPE).optional(),
+  sport: z.enum(SPORT_TYPE).optional(),
   description: z.string().optional(),
   goalDistance: z.number().optional().nullable(),
   goalDuration: z.number().optional().nullable(),
@@ -28,13 +28,13 @@ const trainingEventUpdateSchema = baseEventUpdateSchema.extend({
 
 const competitionEventUpdateSchema = baseEventUpdateSchema.extend({
   type: z.literal(EVENT_TYPE.COMPETITION).optional(),
-  sport: z.nativeEnum(SPORT_TYPE).optional(),
+  sport: z.enum(SPORT_TYPE).optional(),
   description: z.string().optional(),
   goalDistance: z.number().optional().nullable(),
   goalDuration: z.number().optional().nullable(),
   goalElevationGain: z.number().optional().nullable(),
   goalRpe: z.number().optional().nullable(),
-  priority: z.nativeEnum(COMPETITION_PRIORITY).optional().nullable(),
+  priority: z.enum(COMPETITION_PRIORITY).optional().nullable(),
 });
 
 const noteEventUpdateSchema = baseEventUpdateSchema.extend({
@@ -44,7 +44,7 @@ const noteEventUpdateSchema = baseEventUpdateSchema.extend({
 
 const activityEventUpdateSchema = baseEventUpdateSchema.extend({
   type: z.literal(EVENT_TYPE.ACTIVITY).optional(),
-  sport: z.nativeEnum(SPORT_TYPE).optional(),
+  sport: z.enum(SPORT_TYPE).optional(),
   description: z.string().optional(),
   rpe: z.number().optional().nullable(),
   /** One of the athlete's equipment, null to detach it */

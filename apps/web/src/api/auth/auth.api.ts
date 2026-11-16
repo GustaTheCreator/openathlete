@@ -1,5 +1,5 @@
 import client, { routes } from '@/utils/axios';
-import { getApiBaseUrl } from '@/utils/capacitor';
+import { getApiBaseUrl, isCapacitor } from '@/utils/capacitor';
 
 import {
   AuthResponseDto,
@@ -10,22 +10,43 @@ import {
 } from '@openathlete/shared';
 
 export class AuthAPI {
+  private static sessionRequestConfig() {
+    return isCapacitor()
+      ? undefined
+      : {
+          withCredentials: true,
+          headers: { 'X-Auth-Mode': 'cookie' },
+        };
+  }
+
   static async login(body: LoginDto): Promise<AuthResponseDto> {
-    const res = await client.post(routes.auth.login, body);
+    const res = await client.post(
+      routes.auth.login,
+      body,
+      this.sessionRequestConfig(),
+    );
     return res.data;
   }
 
   static async loginWithFirebase(
     body: FirebaseLoginDto,
   ): Promise<AuthResponseDto> {
-    const res = await client.post(routes.auth.firebaseLogin, body);
+    const res = await client.post(
+      routes.auth.firebaseLogin,
+      body,
+      this.sessionRequestConfig(),
+    );
     return res.data;
   }
 
   static async exchangeOidcCode(
     body: OidcExchangeDto,
   ): Promise<AuthResponseDto> {
-    const res = await client.post(routes.auth.oidcExchange, body);
+    const res = await client.post(
+      routes.auth.oidcExchange,
+      body,
+      this.sessionRequestConfig(),
+    );
     return res.data;
   }
 

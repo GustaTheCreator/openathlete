@@ -818,14 +818,14 @@ export function validateWorkoutStructure(
 
   workout.steps.forEach((step: WorkoutStepDto, index: number) => {
     // Check order_index uniqueness
-    if (orderIndices.has(step.orderIndex)) {
+    if (step.orderIndex !== undefined && orderIndices.has(step.orderIndex)) {
       errors.push({
         field: 'orderIndex',
         message: `Duplicate order index ${step.orderIndex}`,
         stepIndex: index,
       });
     }
-    orderIndices.add(step.orderIndex);
+    if (step.orderIndex !== undefined) orderIndices.add(step.orderIndex);
 
     // Validate duration
     if (

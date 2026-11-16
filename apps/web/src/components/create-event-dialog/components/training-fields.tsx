@@ -20,7 +20,7 @@ import {
   SelectItem,
   SelectTrigger,
 } from '../../ui/select';
-import type { EventFormValues } from '../utils/event-form-schemas';
+import type { EventFormInput } from '../utils/event-form-schemas';
 
 /** The sports most sessions are planned in, one tap away */
 const MAIN_SPORTS = [
@@ -33,7 +33,7 @@ const MAIN_SPORTS = [
 
 /** The session name, large, filled from the workout until it is typed */
 export function SessionTitleField({ suggestion }: { suggestion: string }) {
-  const { control } = useFormContext<EventFormValues>();
+  const { control } = useFormContext<EventFormInput>();
   return (
     <Controller
       name="name"
@@ -62,7 +62,7 @@ export function SessionTitleField({ suggestion }: { suggestion: string }) {
 }
 
 export function SportChips() {
-  const { control } = useFormContext<EventFormValues>();
+  const { control } = useFormContext<EventFormInput>();
   return (
     <Controller
       name="sport"

@@ -7,8 +7,8 @@ import { SPORT_TYPE } from '../../misc';
  * differs from a runner's. Storing what is hidden rather than shown lets new
  * tracks appear by default.
  */
-export const hiddenActivityTracksSchema = z.record(
-  z.nativeEnum(SPORT_TYPE),
+export const hiddenActivityTracksSchema = z.partialRecord(
+  z.enum(SPORT_TYPE),
   z.array(z.string().max(40)).max(40),
 );
 

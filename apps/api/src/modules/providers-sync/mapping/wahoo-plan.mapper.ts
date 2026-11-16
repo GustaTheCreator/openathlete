@@ -104,7 +104,7 @@ function mapStep(
   context: SuuntoGuideContext,
 ): WahooPlanInterval {
   const value = step.durationValue;
-  if (!positive(value))
+  if (value === null || value === undefined || !positive(value))
     throw new Error(
       `Wahoo requires a positive duration for step ${step.orderIndex + 1}`,
     );

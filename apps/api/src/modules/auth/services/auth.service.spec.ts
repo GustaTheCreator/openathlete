@@ -6,12 +6,14 @@ function setup() {
   const existing = { userId: 7, email: 'runner@example.com' };
   const prisma = {
     user: {
+      findUnique: jest.fn().mockResolvedValue({ sessionVersion: 0 }),
       // Not found before creating, found once the concurrent call created it
       findFirst: jest
         .fn()
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(existing),
     },
+    authSession: { create: jest.fn().mockResolvedValue({}) },
   };
   const userService = {
     createAccount: jest

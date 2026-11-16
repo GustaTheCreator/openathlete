@@ -12,7 +12,7 @@ import type {
 } from '@openathlete/shared';
 import { EVENT_TYPE, SPORT_TYPE } from '@openathlete/shared';
 
-import type { EventFormValues } from '../utils/event-form-schemas';
+import type { EventFormInput } from '../utils/event-form-schemas';
 
 type CreateProps = {
   date?: Date;
@@ -26,9 +26,14 @@ type EditProps = {
 
 type Props = CreateProps | EditProps;
 
+function dateValue(value: Date | string | undefined) {
+  if (!value) return new Date();
+  return typeof value === 'string' ? new Date(value) : value;
+}
+
 export function useCurrentEventData(
   props: Props,
-  watch: UseFormWatch<EventFormValues>,
+  watch: UseFormWatch<EventFormInput>,
   workoutSteps: CreateWorkoutStepDto[],
   athleteId: number,
 ) {
@@ -42,8 +47,8 @@ export function useCurrentEventData(
         type: EVENT_TYPE.TRAINING,
         name: formValues.name || '',
         description: formValues.description || '',
-        startDate: formValues.startDate || new Date(),
-        endDate: formValues.endDate || new Date(),
+        startDate: dateValue(formValues.startDate),
+        endDate: dateValue(formValues.endDate),
         athleteId,
         sport:
           (formValues as z.infer<typeof trainingEventSchema>).sport ||
@@ -70,8 +75,8 @@ export function useCurrentEventData(
         type: EVENT_TYPE.COMPETITION,
         name: formValues.name || '',
         description: formValues.description || '',
-        startDate: formValues.startDate || new Date(),
-        endDate: formValues.endDate || new Date(),
+        startDate: dateValue(formValues.startDate),
+        endDate: dateValue(formValues.endDate),
         athleteId,
         sport:
           (formValues as z.infer<typeof competitionEventSchema>).sport ||
@@ -96,8 +101,8 @@ export function useCurrentEventData(
         type: EVENT_TYPE.ACTIVITY,
         name: formValues.name || '',
         description: formValues.description || '',
-        startDate: formValues.startDate || new Date(),
-        endDate: formValues.endDate || new Date(),
+        startDate: dateValue(formValues.startDate),
+        endDate: dateValue(formValues.endDate),
         athleteId,
         sport:
           (formValues as z.infer<typeof activityEventSchema>).sport ||
@@ -110,8 +115,8 @@ export function useCurrentEventData(
       type: EVENT_TYPE.NOTE,
       name: formValues.name || '',
       description: formValues.description || '',
-      startDate: formValues.startDate || new Date(),
-      endDate: formValues.endDate || new Date(),
+      startDate: dateValue(formValues.startDate),
+      endDate: dateValue(formValues.endDate),
       athleteId,
     } as CreateEventDto;
   }, [props, watch, workoutSteps, athleteId]);

@@ -14,7 +14,7 @@ export type ImportActivityFileDto = z.infer<typeof importActivityFileDtoSchema>;
 
 /** GPX files do not always say the sport, so the athlete can choose it. */
 export const importGpxActivityFileDtoSchema = importActivityFileDtoSchema
-  .extend({ sport: z.nativeEnum(SPORT_TYPE).optional() })
+  .extend({ sport: z.enum(SPORT_TYPE).optional() })
   .strict();
 
 export type ImportGpxActivityFileDto = z.infer<

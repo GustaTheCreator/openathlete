@@ -21,6 +21,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
+import { UserRole } from '@openathlete/database';
 import {
   InviteAthleteDto,
   InviteCoachDto,
@@ -31,6 +32,7 @@ import {
 } from '@openathlete/shared';
 
 import { JwtUser, UserTypeGuard } from 'src/modules/auth';
+import { UserTypes } from 'src/modules/auth/decorators/user-type.decorator';
 import { AuthUser } from 'src/modules/auth/decorators/user.decorator';
 import { AthleteInvitationService } from 'src/modules/auth/services/athlete-invitation.service';
 
@@ -194,6 +196,7 @@ export class AthleteController {
   }
 
   @UseGuards(AuthGuard('jwt'), UserTypeGuard)
+  @UserTypes([UserRole.COACH])
   @ApiBearerAuth()
   @Post('invite/coach')
   @ApiOperation({
@@ -254,6 +257,7 @@ export class AthleteController {
   }
 
   @UseGuards(AuthGuard('jwt'), UserTypeGuard)
+  @UserTypes([UserRole.COACH])
   @ApiBearerAuth()
   @Post('invite/athlete')
   @ApiOperation({

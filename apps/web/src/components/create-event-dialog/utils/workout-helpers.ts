@@ -2,7 +2,6 @@ import type {
   CreateWorkoutStepDto,
   SPORT_TYPE,
   WorkoutStepDto,
-  WorkoutStepTarget,
 } from '@openathlete/shared';
 import { calculateWorkoutDuration } from '@openathlete/shared';
 
@@ -34,7 +33,7 @@ export function cleanWorkoutSteps(
     const { workoutStepId, workoutId, createdAt, updatedAt, ...stepData } =
       step;
 
-    const cleanedTargets = step.targets?.map((target: WorkoutStepTarget) => {
+    const cleanedTargets = step.targets?.map((target) => {
       const {
         workoutStepTargetId,
         stepId,
@@ -58,18 +57,16 @@ export function cleanWorkoutSteps(
               updatedAt: childUpdatedAt,
               ...childStepData
             } = childStep;
-            const cleanedChildTargets = childStep.targets?.map(
-              (target: WorkoutStepTarget) => {
-                const {
-                  workoutStepTargetId: childTargetId,
-                  stepId: childStepId,
-                  createdAt: childTargetCreatedAt,
-                  updatedAt: childTargetUpdatedAt,
-                  ...targetData
-                } = target;
-                return targetData;
-              },
-            );
+            const cleanedChildTargets = childStep.targets?.map((target) => {
+              const {
+                workoutStepTargetId: childTargetId,
+                stepId: childStepId,
+                createdAt: childTargetCreatedAt,
+                updatedAt: childTargetUpdatedAt,
+                ...targetData
+              } = target;
+              return targetData;
+            });
             return {
               ...childStepData,
               targets: cleanedChildTargets,

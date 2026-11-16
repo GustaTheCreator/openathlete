@@ -12,7 +12,7 @@ const baseEventSchema = z.object({
 
 export const trainingEventSchema = baseEventSchema.extend({
   type: z.literal(EVENT_TYPE.TRAINING),
-  sport: z.nativeEnum(SPORT_TYPE),
+  sport: z.enum(SPORT_TYPE),
   description: z.string(),
   // Descriptions guide the AI generator, which writes this schema
   goalDistance: z.number().optional().nullable().describe('Meters'),
@@ -36,13 +36,13 @@ export const trainingEventSchema = baseEventSchema.extend({
 
 export const competitionEventSchema = baseEventSchema.extend({
   type: z.literal(EVENT_TYPE.COMPETITION),
-  sport: z.nativeEnum(SPORT_TYPE),
+  sport: z.enum(SPORT_TYPE),
   description: z.string(),
   goalDistance: z.number().optional().nullable(),
   goalDuration: z.number().optional().nullable(),
   goalElevationGain: z.number().optional().nullable(),
   goalRpe: z.number().optional().nullable(),
-  priority: z.nativeEnum(COMPETITION_PRIORITY).optional().nullable(),
+  priority: z.enum(COMPETITION_PRIORITY).optional().nullable(),
 });
 
 export const noteEventSchema = baseEventSchema.extend({
@@ -56,7 +56,7 @@ export const noteEventSchema = baseEventSchema.extend({
  */
 export const activityEventSchema = baseEventSchema.extend({
   type: z.literal(EVENT_TYPE.ACTIVITY),
-  sport: z.nativeEnum(SPORT_TYPE),
+  sport: z.enum(SPORT_TYPE),
   description: z.string().optional(),
   rpe: z.number().min(0).max(1).optional().nullable(),
   /** Meters */

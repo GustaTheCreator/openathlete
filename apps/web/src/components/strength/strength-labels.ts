@@ -1,6 +1,6 @@
 import { m } from '@/paraglide/messages';
 
-import type { StrengthGroupKind } from '@openathlete/shared';
+import type { ExerciseSide, StrengthGroupKind } from '@openathlete/shared';
 import { EXERCISE_SIDE, WORKOUT_REPEAT_KIND } from '@openathlete/shared';
 
 export function groupKindLabel(kind: StrengthGroupKind): string {
@@ -33,7 +33,7 @@ export function groupKindHint(kind: StrengthGroupKind): string {
   }
 }
 
-export function sideLabel(side: EXERCISE_SIDE): string {
+export function sideLabel(side: ExerciseSide): string {
   switch (side) {
     case EXERCISE_SIDE.LEFT:
       return m.strength_side_left();

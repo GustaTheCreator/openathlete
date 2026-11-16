@@ -20,18 +20,13 @@ export const ApiEnvSchema = z
     // Core application configuration
     ENV: z
       .nativeEnum(ENV, {
-        required_error:
-          'ENV is required. Must be one of: development, staging, production',
-        invalid_type_error: 'ENV must be a valid environment enum value',
+        error: 'ENV must be one of: development, staging, production',
       })
       .describe('Application environment (development, staging, production)'),
 
     NODE_ENV: z
       .nativeEnum(NODE_ENV, {
-        required_error:
-          'NODE_ENV is required. Must be one of: development, test, production',
-        invalid_type_error:
-          'NODE_ENV must be a valid Node.js environment enum value',
+        error: 'NODE_ENV must be one of: development, test, production',
       })
       .describe('Node.js environment'),
 
@@ -378,7 +373,7 @@ export const ApiEnvSchema = z
       .optional()
       .transform((val) => (val === undefined ? undefined : val === 'true'))
       .describe(
-        'Let users add OpenAI-compatible endpoints by URL (Ollama, vLLM...) and providers on local URLs. The server calls these URLs, so keep it off on public instances. Default: on without Stripe, off with Stripe',
+        'Let users add OpenAI-compatible endpoints by URL (Ollama, vLLM...) and providers on local URLs. The server calls these URLs, so keep it off on public instances. Default: off',
       ),
 
     // Models used with the instance keys, as provider/model. Users with their

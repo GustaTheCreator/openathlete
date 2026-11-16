@@ -1,9 +1,9 @@
 import { m } from '@/paraglide/messages';
 
-import { WORKOUT_STEP_TYPE } from '@openathlete/shared';
+import { WORKOUT_STEP_TYPE, type WorkoutStepType } from '@openathlete/shared';
 
 /** Short step type names, as the builder rows and the player show them */
-export function stepTypeLabel(type: WORKOUT_STEP_TYPE): string {
+export function stepTypeLabel(type: WorkoutStepType): string {
   switch (type) {
     case WORKOUT_STEP_TYPE.WARMUP:
       return m.builder_type_warmup();

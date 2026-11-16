@@ -26,6 +26,7 @@ import { EVENT_TYPE } from '@openathlete/shared';
 import type { SeriesScope } from '../../calendar/series-scope-dialog';
 import { endOfLocalDateInput } from '../../calendar/utils/local-date';
 import {
+  type EventFormInput,
   type EventFormValues,
   withEquipmentId,
 } from '../utils/event-form-schemas';
@@ -67,37 +68,22 @@ export function useEventFormSubmission(
    * Repeats a session just created. The dialog has closed by then, so this
    * talks to the API directly rather than through a component's mutation.
    */
-  const repeatCreated = async (
-    eventId: Event['eventId'],
-    everyWeeks: number,
-    until: string,
-  ) => {
-    try {
-      const copies = await EventAPI.repeatEvent(eventId, {
-        everyWeeks,
-        until: endOfLocalDateInput(until),
-      });
-      toast.success(m.repeat_done({ count: copies.length }));
-    } catch {
-      toast.error(m.repeat_failed());
-    }
-    queryClient.invalidateQueries({ queryKey: [eventKeys.getMyEvents] });
-    invalidateTrainingLoadQueries(queryClient);
-  };
-
-  /** Updates one occurrence, or it and the following ones, as chosen */
-  const update = async (eventId: Event['eventId'], body: UpdateEventDto) => {
-    const seriesEvent =
-      'event' in props && props.event?.seriesId ? props.event : null;
-    const scope =
-      seriesEvent && chooseSeriesScope ? await chooseSeriesScope() : 'single';
-    if (!scope) return;
-    if (scope === 'following') {
-      updateSeriesMutation.mutate({ eventId, body });
-    } else {
-      updateEventMutation.mutate({ eventId, body });
-    }
-  };
+  const repeatCreated = useCallback(
+    async (eventId: Event['eventId'], everyWeeks: number, until: string) => {
+      try {
+        const copies = await EventAPI.repeatEvent(eventId, {
+          everyWeeks,
+          until: endOfLocalDateInput(until),
+        });
+        toast.success(m.repeat_done({ count: copies.length }));
+      } catch {
+        toast.error(m.repeat_failed());
+      }
+      queryClient.invalidateQueries({ queryKey: [eventKeys.getMyEvents] });
+      invalidateTrainingLoadQueries(queryClient);
+    },
+    [queryClient],
+  );
 
   const createEventTemplateMutation = useCreateEventTemplateMutation({
     onSuccess: () => {
@@ -133,8 +119,25 @@ export function useEventFormSubmission(
     },
   });
 
+  /** Updates one occurrence, or it and the following ones, as chosen */
+  const update = useCallback(
+    async (eventId: Event['eventId'], body: UpdateEventDto) => {
+      const seriesEvent =
+        'event' in props && props.event?.seriesId ? props.event : null;
+      const scope =
+        seriesEvent && chooseSeriesScope ? await chooseSeriesScope() : 'single';
+      if (!scope) return;
+      if (scope === 'following') {
+        updateSeriesMutation.mutate({ eventId, body });
+      } else {
+        updateEventMutation.mutate({ eventId, body });
+      }
+    },
+    [chooseSeriesScope, props, updateEventMutation, updateSeriesMutation],
+  );
+
   const onSubmit = useCallback(
-    (handleSubmit: UseFormHandleSubmit<EventFormValues>) =>
+    (handleSubmit: UseFormHandleSubmit<EventFormInput, EventFormValues>) =>
       handleSubmit(
         async (data: EventFormValues) => {
           const {
@@ -208,8 +211,6 @@ export function useEventFormSubmission(
           // Form validation failed
         },
       ),
-    // update and repeatCreated only use the props and mutations listed here
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       workoutSteps,
       athleteId,
@@ -217,9 +218,9 @@ export function useEventFormSubmission(
       edit,
       props,
       createEventMutation,
-      updateEventMutation,
       createEventTemplateMutation,
-      chooseSeriesScope,
+      repeatCreated,
+      update,
     ],
   );
 

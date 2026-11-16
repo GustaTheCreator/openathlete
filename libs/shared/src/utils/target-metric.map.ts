@@ -1,7 +1,8 @@
+import type { WorkoutTargetType } from '../types/dtos/core/workout.dto';
 import { WORKOUT_TARGET_TYPE } from '../types/misc';
 import { METRIC_TYPE } from '../types/misc/core/metric-type.enum';
 
-export const targetMetricMap: Record<WORKOUT_TARGET_TYPE, METRIC_TYPE[]> = {
+export const targetMetricMap: Record<WorkoutTargetType, METRIC_TYPE[]> = {
   [WORKOUT_TARGET_TYPE.HEARTRATE]: [
     METRIC_TYPE.HR_MAX,
     METRIC_TYPE.HR_REST,
@@ -34,7 +35,7 @@ export const targetMetricMap: Record<WORKOUT_TARGET_TYPE, METRIC_TYPE[]> = {
  * This is used to resolve percentage-based targets to absolute values.
  */
 export const defaultMetricForTarget: Partial<
-  Record<WORKOUT_TARGET_TYPE, METRIC_TYPE>
+  Record<WorkoutTargetType, METRIC_TYPE>
 > = {
   [WORKOUT_TARGET_TYPE.HEARTRATE]: METRIC_TYPE.HR_MAX,
   [WORKOUT_TARGET_TYPE.ZONE]: METRIC_TYPE.HR_MAX,
@@ -43,14 +44,14 @@ export const defaultMetricForTarget: Partial<
 };
 
 export function getCompatibleMetrics(
-  targetType: WORKOUT_TARGET_TYPE,
+  targetType: WorkoutTargetType,
 ): METRIC_TYPE[] {
   return targetMetricMap[targetType] || [];
 }
 
 export function isMetricCompatibleWithTarget(
   metricType: METRIC_TYPE,
-  targetType: WORKOUT_TARGET_TYPE,
+  targetType: WorkoutTargetType,
 ): boolean {
   const compatibleMetrics = getCompatibleMetrics(targetType);
   return compatibleMetrics.includes(metricType);

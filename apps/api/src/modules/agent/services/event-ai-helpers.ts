@@ -17,7 +17,6 @@ import {
   WORKOUT_DURATION_TYPE,
   WORKOUT_STEP_TYPE,
   WORKOUT_TARGET_TYPE,
-  WorkoutStepDto,
   trainingEventSchema,
 } from '@openathlete/shared';
 
@@ -51,6 +50,7 @@ type TargetWithUnit = {
 };
 
 type StepWithTargets = {
+  stepType?: string | null;
   targets?: TargetWithUnit[];
   repeatBlock?: {
     childSteps?: StepWithTargets[];
@@ -346,7 +346,7 @@ export function createZoneIdMap(
  * Validate and fix zone target value
  */
 export function validateZoneTarget(
-  target: { targetType: string; targetValue?: number | null },
+  target: TargetWithUnit,
   zoneIdMap: Map<number, { type: string; id: number }>,
   zones: Zone[],
 ): { target: typeof target | null; fixed: boolean } {
@@ -373,20 +373,7 @@ export function validateZoneTarget(
  * Validate and fix zone targets in a step
  */
 export function validateStepZoneTargets(
-  step: {
-    targets?: Array<{
-      targetType: string;
-      targetValue?: number | null;
-    }>;
-    repeatBlock?: {
-      childSteps?: Array<{
-        targets?: Array<{
-          targetType: string;
-          targetValue?: number | null;
-        }>;
-      }>;
-    };
-  },
+  step: StepWithTargets,
   zoneIdMap: Map<number, { type: string; id: number }>,
   zones: Zone[],
 ): typeof step {
@@ -424,7 +411,7 @@ export function validateStepZoneTargets(
  * Validate and fix zone targets in workout steps
  */
 export function validateWorkoutZoneTargets(
-  workout: { steps: WorkoutStepDto[] } | null | undefined,
+  workout: WorkoutWithSteps,
   zoneIdMap: Map<number, { type: string; id: number }>,
   zones: Zone[],
 ): typeof workout {
@@ -488,14 +475,12 @@ export function repsAsPoolLengths(
  * Validate that repeat blocks are not nested (max depth of 1)
  * Throws an error if nested repeat blocks are found
  */
-export function validateNoNestedRepeatBlocks(
-  workout: { steps: WorkoutStepDto[] } | null | undefined,
-): void {
+export function validateNoNestedRepeatBlocks(workout: WorkoutWithSteps): void {
   if (!workout?.steps) {
     return;
   }
 
-  const checkStep = (step: WorkoutStepDto, depth = 0): void => {
+  const checkStep = (step: StepWithTargets, depth = 0): void => {
     if (step.stepType === WORKOUT_STEP_TYPE.REPEAT && step.repeatBlock) {
       if (depth > 0) {
         throw new Error(
@@ -505,7 +490,7 @@ export function validateNoNestedRepeatBlocks(
 
       // Check child steps - they should not contain repeat blocks
       if (step.repeatBlock.childSteps) {
-        step.repeatBlock.childSteps.forEach((childStep: WorkoutStepDto) => {
+        step.repeatBlock.childSteps.forEach((childStep: StepWithTargets) => {
           if (
             childStep.stepType === WORKOUT_STEP_TYPE.REPEAT &&
             childStep.repeatBlock
