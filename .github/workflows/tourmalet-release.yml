@@ -145,13 +145,10 @@ jobs:
           services:
             api:
               image: ${API_IMAGE}
-              build: null
             worker:
               image: ${API_IMAGE}
-              build: null
             web:
               image: ${WEB_IMAGE}
-              build: null
           EOF
 
       - name: Start the release image stack
