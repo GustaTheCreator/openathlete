@@ -9,21 +9,21 @@ import {
   OidcExchangeDto,
 } from '@openathlete/shared';
 
-export class AuthAPI {
-  private static sessionRequestConfig() {
-    return isCapacitor()
-      ? undefined
-      : {
-          withCredentials: true,
-          headers: { 'X-Auth-Mode': 'cookie' },
-        };
-  }
+function sessionRequestConfig() {
+  return isCapacitor()
+    ? undefined
+    : {
+        withCredentials: true,
+        headers: { 'X-Auth-Mode': 'cookie' },
+      };
+}
 
+export class AuthAPI {
   static async login(body: LoginDto): Promise<AuthResponseDto> {
     const res = await client.post(
       routes.auth.login,
       body,
-      this.sessionRequestConfig(),
+      sessionRequestConfig(),
     );
     return res.data;
   }
@@ -34,7 +34,7 @@ export class AuthAPI {
     const res = await client.post(
       routes.auth.firebaseLogin,
       body,
-      this.sessionRequestConfig(),
+      sessionRequestConfig(),
     );
     return res.data;
   }
@@ -45,7 +45,7 @@ export class AuthAPI {
     const res = await client.post(
       routes.auth.oidcExchange,
       body,
-      this.sessionRequestConfig(),
+      sessionRequestConfig(),
     );
     return res.data;
   }
