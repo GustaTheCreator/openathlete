@@ -55,6 +55,7 @@ const EXPORTED_TABLES = [
   'training_zone',
 ];
 const NOT_EXPORTED_TABLES = {
+  auth_session: 'device session identifiers and hashed refresh credentials',
   garmin_personal_item:
     'technical source identity, local deletion and processing receipts; activity data is exported through events',
   activity_chat_notice:
@@ -210,6 +211,14 @@ describe('AccountExportService (PostgreSQL)', () => {
   });
 
   it('never exports secrets', async () => {
+    await prisma.authSession.create({
+      data: {
+        id: '00000000-0000-0000-0000-000000000001',
+        userId: USER_ID,
+        refreshTokenHash: 'session-hash-fixture',
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
     const { text } = await exportOf(USER_ID, true);
 
     for (const secret of [
@@ -217,6 +226,8 @@ describe('AccountExportService (PostgreSQL)', () => {
       '"pushToken"',
       '"accessToken"',
       '"refreshToken"',
+      '"refreshTokenHash"',
+      'session-hash-fixture',
       '"encryptedApiKey"',
       'v1:a:b:c',
     ]) {
