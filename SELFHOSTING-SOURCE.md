@@ -1,6 +1,6 @@
 # Build this fork
 
-This fork is based on OpenAthlete v1.6.0. Its release tag is `tourmalet-2026.11.16`; use that tag to obtain the source corresponding to the installed release. The upstream AGPL-3.0 license remains in `LICENSE`.
+This fork is based on OpenAthlete v1.6.0. Its release tag is `tourmalet-2026.11.16.1`; use that tag to obtain the source corresponding to the installed release. The upstream AGPL-3.0 license remains in `LICENSE`.
 
 Use Node 22.23.4 and pnpm 9.15.9, or the supplied Dockerfiles with pinned base images. Generate your own credentials in private environment files; example values are not deployment credentials. Keep databases, backups, tunnel credentials and personal project notes outside Git and Docker build contexts.
 
@@ -26,3 +26,5 @@ docker compose -f docker-compose.yml -f selfhost/docker-compose.source.yml up -d
 The application contains the source link in its React footer. No startup script or injected floating link is required. The link opens this fork's release tag on GitHub.
 
 See `SECURITY.md` for session changes, the remaining tooling advisory and reporting instructions. Before upgrades, back up the database and private configuration and test migrations against an isolated copy. The session migration is additive, but legacy session JWTs are rejected and users must sign in again.
+
+Native mobile publishing is separate from these server containers. Its unresolved CocoaPods/ActiveSupport advisory is documented in `SECURITY.md`; no native app binaries are published by this server release.

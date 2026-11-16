@@ -2,7 +2,7 @@
 
 Self-hosted fork based on upstream v1.6.0, with bidirectional Wahoo synchronization and session/permission hardening.
 
-[Release source](https://github.com/GustaTheCreator/openathlete/tree/tourmalet-2026.11.16) · [Build this fork](SELFHOSTING-SOURCE.md) · [Security and limitations](SECURITY.md)
+[Release source](https://github.com/GustaTheCreator/openathlete/tree/tourmalet-2026.11.16.1) · [Build this fork](SELFHOSTING-SOURCE.md) · [Security and limitations](SECURITY.md)
 
 The upstream project documentation follows below. Deployment credentials, athlete data and personal operational notes are not included.
 

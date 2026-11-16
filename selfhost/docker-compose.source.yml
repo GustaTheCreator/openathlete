@@ -1,12 +1,12 @@
 services:
   api:
-    image: openathlete-api:tourmalet-2026.11.16
+    image: openathlete-api:tourmalet-2026.11.16.1
     pull_policy: never
     build:
       context: .
       dockerfile: apps/api/Dockerfile
   web:
-    image: openathlete-web:tourmalet-2026.11.16
+    image: openathlete-web:tourmalet-2026.11.16.1
     pull_policy: never
     build:
       context: .

@@ -1,6 +1,6 @@
 # Corresponding source
 
-Release tag: `tourmalet-2026.11.16` in [GustaTheCreator/openathlete](https://github.com/GustaTheCreator/openathlete/tree/tourmalet-2026.11.16).
+Release tag: `tourmalet-2026.11.16.1` in [GustaTheCreator/openathlete](https://github.com/GustaTheCreator/openathlete/tree/tourmalet-2026.11.16.1).
 
 Base: upstream OpenAthlete v1.6.0. This fork adds bidirectional Wahoo synchronization, the instance footer and the security changes described in `SECURITY.md`. The source includes application code, dependency lockfile, migrations and Docker build recipes. Runtime credentials, databases, backups and personal operational notes are excluded.
 

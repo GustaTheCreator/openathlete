@@ -13,8 +13,12 @@ Report vulnerabilities privately through this repository's **Security → Report
 
 Legacy JWTs are intentionally invalidated by this release. Sign in again after upgrading. Browser/PWA refresh cookies retain the normal return-to-session flow; the native memory-only restriction is separate.
 
-## Dependency advisory still visible
+## Dependency advisories still visible
 
-As of 2026-11-16, the dependency audit still reports [GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4) for `deepmerge@4.3.1`. It is a low-severity finding in development tooling used by Nest CLI/Jest; no production dependency path or application call receiving untrusted data was identified. No patched upstream release was available. The finding is retained in audit output rather than suppressed or hidden by a version alias. Recheck it when updating the toolchain and build only trusted projects.
+The standalone documentation lock was audited separately and its minimatch dependency was updated; its audit, type check and production build passed. Ruby Addressable was updated to 2.9.2 with Bundler 2.6.8, preserving CocoaPods and the existing Bundler version. The following findings remain visible.
+
+As of 2026-11-16, the Node workspace audit still reports [GHSA-gcqx-w48m-w2h4](https://github.com/advisories/GHSA-gcqx-w48m-w2h4) for `deepmerge@4.3.1`. It is a low-severity finding in development tooling used by Nest CLI/Jest; no production dependency path or application call receiving untrusted data was identified. No patched upstream release was available. The finding is retained in audit output rather than suppressed or hidden by a version alias. Recheck it when updating the toolchain and build only trusted projects.
+
+The optional Ruby mobile-release toolchain also retains the high-severity [ActiveSupport safe_constantize advisory](https://github.com/rails/rails/security/advisories/GHSA-8474-xrp6-wh69). The lock contains ActiveSupport 7.2.4; official fixes are 8.0.5.2/8.1.4.1, while [CocoaPods/Core 1.17.0 requires ActiveSupport below 8](https://rubygems.org/gems/cocoapods-core/versions/1.17.0/dependencies). No compatible official backport was found. The alert remains open; versions were not forced around that constraint and the lock was not removed. The affected Ruby code is not installed or executed in the Node/Nginx server images, which use Socket.IO rather than Rails Action Cable. Native release jobs and local Ruby tooling remain a separate risk when processing untrusted input. Review this advisory before building native apps and update when a compatible upstream fix is available.
 
 This is a scoped hardening effort, not a guarantee that the program has no vulnerabilities. Keep deployment secrets private, install security updates, maintain backups and grant access only to appropriate users.

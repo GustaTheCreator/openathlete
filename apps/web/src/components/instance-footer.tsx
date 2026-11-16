@@ -11,7 +11,7 @@ export function InstanceFooter() {
       </a>
       <span aria-hidden="true">·</span>
       <a
-        href="https://github.com/GustaTheCreator/openathlete/tree/tourmalet-2026.11.16"
+        href="https://github.com/GustaTheCreator/openathlete/tree/tourmalet-2026.11.16.1"
         className={linkClassName}
       >
         {m.footer_source()}
