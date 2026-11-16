@@ -1,6 +1,6 @@
 # Build this fork
 
-This fork is based on OpenAthlete v1.6.0. Its release tag is `tourmalet-2026.11.16.1`; use that tag to obtain the source corresponding to the installed release. The upstream AGPL-3.0 license remains in `LICENSE`.
+This fork is based on OpenAthlete v1.6.0. Use the exact tag linked by the installed footer to obtain its corresponding source. New releases use annotated `tourmalet-vMAJOR.MINOR.PATCH` tags; the earlier `tourmalet-2026.11.16.1` tag is retained. The upstream AGPL-3.0 license remains in `LICENSE`. For normal server updates, follow [DEPLOYMENT.md](DEPLOYMENT.md).
 
 Use Node 22.23.4 and pnpm 9.15.9, or the supplied Dockerfiles with pinned base images. Generate your own credentials in private environment files; example values are not deployment credentials. Keep databases, backups, tunnel credentials and personal project notes outside Git and Docker build contexts.
 

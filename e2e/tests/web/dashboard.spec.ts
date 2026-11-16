@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 
+import { test } from '../../support/authenticated-test';
 import {
   ERROR_BOUNDARY_TEXT,
   trackPageProblems,

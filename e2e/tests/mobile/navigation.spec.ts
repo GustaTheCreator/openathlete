@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 
+import { test } from '../../support/authenticated-test';
 import { trackPageProblems } from '../../support/page-health';
 
 test('moves between the tabs of the app', async ({ page }) => {

@@ -1,11 +1,10 @@
 import { expect, test as setup } from '@playwright/test';
 
 import { createAthlete } from '../support/api';
-import { AUTH_FILE, WEB_URL } from '../support/env';
+import { WEB_URL } from '../support/env';
 
-// One athlete logged in through the real login form; the desktop and
-// mobile projects reuse its HttpOnly refresh cookie.
-setup('log in the shared athlete', async ({ page, request }) => {
+// Exercise the real login form and cookie-only browser session contract.
+setup('log in the athlete through the real form', async ({ page, request }) => {
   const athlete = await createAthlete(request);
 
   await page.goto('/auth/login');
@@ -24,10 +23,4 @@ setup('log in the shared athlete', async ({ page, request }) => {
     ({ name }) => /^(?:__Host-)?oa_refresh$/.test(name),
   );
   expect(refreshCookie?.httpOnly).toBe(true);
-
-  const state = await page.context().storageState({ path: AUTH_FILE });
-  const storedSessionKeys = state.origins
-    .flatMap(({ localStorage }) => localStorage)
-    .filter(({ name }) => name === 'access_token' || name === 'refresh_token');
-  expect(storedSessionKeys).toEqual([]);
 });

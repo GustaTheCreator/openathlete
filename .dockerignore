@@ -48,6 +48,9 @@ infra
 
 # Deployment docs (not needed in image)
 deploy
+.deploy
+public-source
+**/__pycache__
 
 # Test & dev artifacts
 **/*.test.ts

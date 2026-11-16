@@ -2,7 +2,7 @@
 
 Self-hosted fork based on upstream v1.6.0, with bidirectional Wahoo synchronization and session/permission hardening.
 
-[Release source](https://github.com/GustaTheCreator/openathlete/tree/tourmalet-2026.11.16.1) · [Build this fork](SELFHOSTING-SOURCE.md) · [Security and limitations](SECURITY.md)
+[Versioned releases](https://github.com/GustaTheCreator/openathlete/releases) · [Deploy and versioning](DEPLOYMENT.md) · [Build this fork](SELFHOSTING-SOURCE.md) · [Security and limitations](SECURITY.md)
 
 The upstream project documentation follows below. Deployment credentials, athlete data and personal operational notes are not included.
 
@@ -114,7 +114,7 @@ Here is what you need to be able to run OpenAthlete.
 
 ### Extensão local Tourmalet — Wahoo
 
-Esta cópia baseada em v1.6.0 acrescenta Wahoo para importar atividades e enviar treinos de ciclismo. O fluxo, configuração OAuth, limites e critérios de ativação estão em [SELFHOSTING-SOURCE.md](SELFHOSTING-SOURCE.md). O código personalizado está no ramo `codex/wahoo-integration`; a instalação Tourmalet continua separada e não é atualizada automaticamente por este checkout.
+Esta cópia baseada em v1.6.0 acrescenta Wahoo para importar atividades e enviar treinos de ciclismo. O código personalizado está no ramo estável `tourmalet`; as atualizações passam por testes e releases versionadas, que o servidor instala por digest. O fluxo de publicação, validação de migrações e recuperação está em [DEPLOYMENT.md](DEPLOYMENT.md). Uma alteração local só chega ao servidor depois de publicada como release.
 
 ### Setup
 

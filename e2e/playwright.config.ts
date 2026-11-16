@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-import { AUTH_FILE, WEB_URL } from './support/env';
+import { WEB_URL } from './support/env';
 
 const isCI = Boolean(process.env.CI);
 
@@ -23,13 +23,12 @@ export default defineConfig({
   // testMatch runs against absolute paths: anchor on tests/ so a checkout
   // in a folder named like a project ("…-mobile/") selects nothing extra
   projects: [
-    { name: 'setup', testMatch: /auth\.setup\.ts/ },
+    { name: 'auth-form', testMatch: /auth\.setup\.ts/ },
     { name: 'api', testMatch: /tests\/api\/.*\.spec\.ts$/ },
     {
       name: 'desktop',
       testMatch: /tests\/web\/.*\.spec\.ts$/,
-      use: { ...devices['Desktop Chrome'], storageState: AUTH_FILE },
-      dependencies: ['setup'],
+      use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'mobile',
@@ -38,17 +37,14 @@ export default defineConfig({
       use: {
         ...devices['iPhone 13'],
         browserName: 'chromium',
-        storageState: AUTH_FILE,
       },
-      dependencies: ['setup'],
     },
     {
       // The same phone tests on an Android phone: its own viewport, screen
       // density and user agent
       name: 'android',
       testMatch: /tests\/mobile\/.*\.spec\.ts$/,
-      use: { ...devices['Pixel 8'], storageState: AUTH_FILE },
-      dependencies: ['setup'],
+      use: { ...devices['Pixel 8'] },
     },
   ],
 });

@@ -1,4 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
+
+import { test } from '../../support/authenticated-test';
 
 test('the agenda jumps to a month years back', async ({ page }) => {
   await page.goto('/dashboard/calendar?view=month');

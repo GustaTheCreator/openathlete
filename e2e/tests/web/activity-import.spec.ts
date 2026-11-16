@@ -1,5 +1,7 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 import path from 'node:path';
+
+import { test } from '../../support/authenticated-test';
 
 // A synthetic 10-minute run recorded with the Garmin FIT SDK; no real data.
 const FIT = path.join(import.meta.dirname, '../../fixtures/synthetic-run.fit');
@@ -17,7 +19,6 @@ test('imports FIT files from Settings > Connectors', async ({ page }) => {
   );
   await dialog.locator('button[type="submit"]').click();
 
-  // The shared athlete may already have it from an earlier run.
   const result = dialog.locator('[data-import-result="ok"]');
   await expect(result).toBeVisible();
   await expect(result).toContainText('synthetic-run');
@@ -54,7 +55,6 @@ test('imports a TCX file with its notes as the name', async ({ page }) => {
   );
   await dialog.locator('button[type="submit"]').click();
 
-  // The shared athlete may already have it from an earlier run.
   const result = dialog.locator('[data-import-result="ok"]');
   await expect(result).toBeVisible();
   await expect(result).toContainText('Synthetic run');

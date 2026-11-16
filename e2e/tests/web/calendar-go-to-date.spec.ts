@@ -1,4 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
+
+import { test } from '../../support/authenticated-test';
 
 // Reaching a month years back used to take one click per month
 test('the calendar jumps to a month years back in two clicks', async ({
