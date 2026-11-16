@@ -1,4 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
+
+import { test } from '../../support/authenticated-test';
 
 test('the agenda plans on the day picked in the week strip', async ({
   page,
