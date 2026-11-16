@@ -16,6 +16,7 @@ jobs:
     name: Validate release tag
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
     outputs:
       version: ${{ steps.version.outputs.value }}
@@ -27,6 +28,26 @@ jobs:
         run: git fetch origin tourmalet:refs/remotes/origin/tourmalet
       - name: Validate tag and release ancestry
         run: python scripts/release.py check --tag "$GITHUB_REF_NAME" --revision "$GITHUB_SHA" --main-ref origin/tourmalet
+      - name: Require successful CI for this exact stable commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+        run: |
+          count=$(gh run list \
+            --repo "$REPOSITORY" \
+            --workflow ci.yml \
+            --branch tourmalet \
+            --event push \
+            --commit "$REVISION" \
+            --status success \
+            --limit 1 \
+            --json databaseId \
+            --jq length)
+          if [[ "$count" != "1" ]]; then
+            echo "No successful CI push run for $REVISION on tourmalet" >&2
+            exit 1
+          fi
       - id: version
         name: Read release version
         run: echo "value=$(cat VERSION)" >> "$GITHUB_OUTPUT"
@@ -40,14 +61,9 @@ jobs:
             exit 1
           fi
 
-  verify:
-    name: CI for tagged commit
-    needs: validate
-    uses: ./.github/workflows/ci.yml
-
   build:
     name: Build and publish Tourmalet images
-    needs: [validate, verify]
+    needs: validate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -122,7 +138,7 @@ jobs:
 
   smoke:
     name: Smoke test published image digests
-    needs: [validate, verify, build]
+    needs: [validate, build]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -173,7 +189,7 @@ jobs:
 
   publish-release:
     name: Publish source and release manifest
-    needs: [validate, verify, build, smoke]
+    needs: [validate, build, smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: write
