@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { OnEvent } from '@nestjs/event-emitter';
 import { Cron } from '@nestjs/schedule';
 
 import {
@@ -9,12 +10,13 @@ import {
   normalizeWorkoutForExport,
 } from '@openathlete/shared';
 
+import { ProviderConnectedEvent } from '../../events/provider-connected.event';
 import { PrismaService } from '../prisma/services/prisma.service';
 import { ProviderRateLimitError } from './errors/provider-rate-limit.error';
 import { ProviderExportService } from './export.service';
 
-type ProviderKey = 'garmin' | 'suunto' | 'coros';
-type ProviderEnum = 'GARMIN' | 'SUUNTO' | 'COROS';
+type ProviderKey = 'garmin' | 'suunto' | 'coros' | 'wahoo';
+type ProviderEnum = 'GARMIN' | 'SUUNTO' | 'COROS' | 'WAHOO';
 
 function providerEnumToKey(provider: string): ProviderKey | null {
   switch (provider) {
@@ -24,6 +26,8 @@ function providerEnumToKey(provider: string): ProviderKey | null {
       return 'suunto';
     case 'COROS':
       return 'coros';
+    case 'WAHOO':
+      return 'wahoo';
     default:
       return null;
   }
@@ -37,6 +41,8 @@ function providerKeyToEnum(provider: ProviderKey): ProviderEnum {
       return 'SUUNTO';
     case 'coros':
       return 'COROS';
+    case 'wahoo':
+      return 'WAHOO';
   }
 }
 
@@ -49,6 +55,28 @@ export class ProviderExportScheduler {
     private readonly exportService: ProviderExportService,
     private readonly configService: ConfigService<ApiEnvSchemaType, true>,
   ) {}
+
+  @OnEvent(ProviderConnectedEvent.SLUG, { async: true })
+  async onProviderConnected(event: ProviderConnectedEvent): Promise<void> {
+    try {
+      await this.syncExportsForWindow(
+        undefined,
+        undefined,
+        event.athleteId,
+        event.provider,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Initial ${event.provider} export failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    }
+  }
+
+  @Cron('*/30 * * * *', { timeZone: 'UTC' })
+  async syncWahooExports(): Promise<void> {
+    if (this.configService.get('ENABLE_ACTIVITY_IMPORT') !== true) return;
+    await this.syncExportsForWindow(undefined, undefined, undefined, 'WAHOO');
+  }
 
   // Run daily at 00:10 UTC
   @Cron('10 0 * * *', { timeZone: 'UTC' })
@@ -65,6 +93,7 @@ export class ProviderExportScheduler {
     startDate?: Date,
     endDate?: Date,
     athleteId?: number,
+    providerFilter?: ProviderEnum,
   ) {
     const now = new Date();
     const windowStart = startDate || now;
@@ -81,7 +110,9 @@ export class ProviderExportScheduler {
     // Get all athletes with active provider accounts (or specific athlete if provided)
     const providerAccounts = await this.prisma.providerAccount.findMany({
       where: {
-        provider: { in: ['GARMIN', 'SUUNTO', 'COROS'] },
+        provider: providerFilter ?? {
+          in: ['GARMIN', 'SUUNTO', 'COROS', 'WAHOO'],
+        },
         status: 'active',
         exportWorkoutsEnabled: true,
         ...(athleteId && { athleteId: athleteId }),
@@ -93,10 +124,7 @@ export class ProviderExportScheduler {
     });
 
     // Group by athlete
-    const athletesByProvider = new Map<
-      number,
-      Set<'garmin' | 'suunto' | 'coros'>
-    >();
+    const athletesByProvider = new Map<number, Set<ProviderKey>>();
 
     for (const account of providerAccounts) {
       const providerKey = providerEnumToKey(account.provider);

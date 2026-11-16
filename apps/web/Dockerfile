@@ -3,8 +3,9 @@
 # ---- Build stage ----
 # The bundle is the same on every architecture: build it once, on the
 # builder's own platform. Emulating arm64 made the release build take hours.
-FROM --platform=$BUILDPLATFORM node:22.23.4-alpine AS build
+FROM --platform=$BUILDPLATFORM node:22.23.4-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS build
 WORKDIR /app
+ENV NODE_OPTIONS=--max-old-space-size=1536
 
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
@@ -35,7 +36,7 @@ WORKDIR /app/apps/web
 RUN pnpm build
 
 # ---- Runtime stage ----
-FROM nginx:alpine AS runtime
+FROM nginx:alpine@sha256:fed7e14be83cbd2661a75cdc5b872d936cf155d46c327084d30b8df19ae88d72 AS runtime
 
 # Copy built assets
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html

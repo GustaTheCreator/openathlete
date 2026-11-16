@@ -1,6 +1,6 @@
 import type { NormalizedWorkout } from '@openathlete/shared';
 
-export type Provider = 'garmin' | 'suunto' | 'coros';
+export type Provider = 'garmin' | 'suunto' | 'coros' | 'wahoo';
 
 export interface UpsertPlannedWorkoutInput {
   athleteId: number;

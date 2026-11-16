@@ -2346,5 +2346,8 @@
   "player_step_done": "Hecho",
   "player_log_title": "Series hechas",
   "player_log_skipped": "saltada",
-  "player_log_rounds": "AMRAP: {count} vueltas"
+  "player_log_rounds": "AMRAP: {count} vueltas",
+  "wahoo_disconnect_remote_pending": "La sincronización local está desactivada. Elimina esta aplicación de tu cuenta Wahoo para terminar de desconectarla.",
+  "footer_privacy": "Privacidad",
+  "footer_source": "Código fuente"
 }

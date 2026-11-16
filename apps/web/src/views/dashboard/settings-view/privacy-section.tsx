@@ -1,5 +1,6 @@
 import { UserAPI } from '@/api/user';
 import { ConsentSettings } from '@/components/consent';
+import { InstanceFooter } from '@/components/instance-footer';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -73,6 +74,7 @@ export function PrivacySection() {
           </Label>
         </div>
       </SettingsPanel>
+      <InstanceFooter />
     </SettingsSection>
   );
 }

@@ -27,4 +27,10 @@ describe('configured providers', () => {
       configuredProviders(env({ APP_URL: 'https://app.example.org' })),
     ).toEqual(['COROS']);
   });
+
+  it('offers Wahoo only with its public PKCE client configured', () => {
+    expect(configuredProviders(env({ WAHOO_CLIENT_ID: 'id' }))).toEqual([
+      'WAHOO',
+    ]);
+  });
 });

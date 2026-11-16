@@ -28,7 +28,8 @@ export interface ConnectedProvider {
 
 export interface GetOAuthUriResponse {
   uri: string;
-  codeVerifier?: string; // For PKCE providers: Garmin, COROS
+  codeVerifier?: string; // For PKCE providers: Garmin, COROS, Wahoo
+  state?: string;
 }
 
 export interface ImportAllActivitiesResponse {
@@ -57,23 +58,26 @@ export class ProviderAPI {
     code,
     codeVerifier,
     scope,
+    state,
   }: {
     provider: ConnectorProvider;
     code: string;
     codeVerifier?: string;
     /** Scopes the user accepted, from the redirect (Strava) */
     scope?: string;
+    state?: string;
   }): Promise<void> {
     await client.post(routes.provider.setOAuthToken(provider), {
       code,
       ...(codeVerifier && { codeVerifier }),
       ...(scope && { scope }),
+      ...(state && { state }),
     });
   }
 
   static async disconnect(
     provider: ConnectorProvider,
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; remoteRevoked?: boolean }> {
     const res = await client.post(routes.provider.disconnect(provider));
     return res.data;
   }

@@ -56,6 +56,13 @@ export type CorosSyncJobData =
 
 const POLAR_WEBHOOK_SECRET_KEY = 'openathlete:polar:webhook-secret';
 
+const WAHOO_OAUTH_CONSUME = `local value = redis.call('GET', KEYS[1])
+if not value then return 0 end
+local login = cjson.decode(value)
+if login.userId ~= tonumber(ARGV[1]) or login.challenge ~= ARGV[2] then return 0 end
+redis.call('DEL', KEYS[1])
+return 1`;
+
 /** Removal of an athlete's activities saved twice, from two sources */
 export interface DuplicateActivitiesJobData {
   athleteId: number;
@@ -99,6 +106,42 @@ export class QueueService {
     @InjectQueue('strava-description')
     private readonly stravaDescriptionQueue: Queue<StravaDescriptionJobData>,
   ) {}
+
+  async rememberWahooOAuth(
+    state: string,
+    userId: number,
+    verifier: string,
+  ): Promise<void> {
+    const redis = await this.activityImportQueue.client;
+    const saved = await redis.set(
+      `openathlete:wahoo:oauth:${state}`,
+      JSON.stringify({
+        userId,
+        challenge: createHash('sha256').update(verifier).digest('hex'),
+      }),
+      { EX: 600 },
+    );
+    if (!saved) throw new Error('Could not start Wahoo authorization');
+  }
+
+  async consumeWahooOAuth(
+    state: string,
+    userId: number,
+    verifier: string,
+  ): Promise<boolean> {
+    if (!/^[A-Za-z0-9_-]{43}$/.test(state)) return false;
+    const redis = await this.activityImportQueue.client;
+    redis.defineCommand('consumeWahooOAuth', {
+      numberOfKeys: 1,
+      lua: WAHOO_OAUTH_CONSUME,
+    });
+    const result = await redis.runCommand('consumeWahooOAuth', [
+      `openathlete:wahoo:oauth:${state}`,
+      userId,
+      createHash('sha256').update(verifier).digest('hex'),
+    ]);
+    return result === 1;
+  }
 
   /**
    * One job per Strava activity: the import and a duplicate skip of the same

@@ -26,6 +26,7 @@ import {
   PolarProviderService,
   StravaProviderService,
   SuuntoProviderService,
+  WahooProviderService,
 } from '../../providers-sync/providers';
 import { ActivityImportJobData, QueueService } from '../queue.service';
 
@@ -49,6 +50,8 @@ export class ActivityImportProcessor extends WorkerHost {
     private readonly suuntoProviderService: SuuntoProviderService,
     @Inject(forwardRef(() => CorosProviderService))
     private readonly corosProviderService: CorosProviderService,
+    @Inject(forwardRef(() => WahooProviderService))
+    private readonly wahooProviderService: WahooProviderService,
     private readonly queueService: QueueService,
     @Inject(forwardRef(() => ActivityDuplicateService))
     private readonly duplicates: ActivityDuplicateService,
@@ -198,6 +201,11 @@ export class ActivityImportProcessor extends WorkerHost {
         );
       } else if (account.provider === ConnectorProvider.COROS) {
         result = await this.corosProviderService.importActivity(
+          account,
+          activity,
+        );
+      } else if (account.provider === ConnectorProvider.WAHOO) {
+        result = await this.wahooProviderService.importActivity(
           account,
           activity,
         );

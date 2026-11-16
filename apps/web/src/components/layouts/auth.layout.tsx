@@ -1,5 +1,6 @@
 import authBackground from '@/assets/images/auth/background.webp';
 import whiteLogoSrc from '@/assets/logos/logo_white.svg';
+import { InstanceFooter } from '@/components/instance-footer';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { Button } from '@/components/ui/button';
 import { m } from '@/paraglide/messages';
@@ -55,6 +56,7 @@ export function AuthLayout({ children }: P) {
             {children}
           </div>
         </div>
+        <InstanceFooter />
       </div>
       <div className="relative hidden bg-muted lg:block">
         <img

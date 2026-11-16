@@ -2346,5 +2346,8 @@
   "player_step_done": "Done",
   "player_log_title": "Sets done",
   "player_log_skipped": "skipped",
-  "player_log_rounds": "AMRAP: {count} rounds"
+  "player_log_rounds": "AMRAP: {count} rounds",
+  "wahoo_disconnect_remote_pending": "Local sync is off. Remove this app from your Wahoo account to finish disconnecting.",
+  "footer_privacy": "Privacy",
+  "footer_source": "Source code"
 }

@@ -36,6 +36,20 @@ function setup(storedSport: SPORT_TYPE) {
 }
 
 describe('WorkoutSyncListener', () => {
+  it('does not send an eighth calendar day to a seven-day provider window', async () => {
+    const { listener, exportService } = setup(SPORT_TYPE.CYCLING);
+    await listener.handle(
+      new WorkoutPlannedChangedEvent({
+        eventId: 1,
+        athleteId: 9,
+        workoutId: 7,
+        startDate: new Date(Date.now() + 7 * 86400_000),
+        sport: SPORT_TYPE.CYCLING,
+      }),
+    );
+    expect(exportService.upsertPlannedExport).not.toHaveBeenCalled();
+  });
+
   it('exports the sport saved on the session, not the one in the event', async () => {
     const { listener, exportService } = setup(SPORT_TYPE.CYCLING);
 

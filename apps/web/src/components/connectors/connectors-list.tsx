@@ -22,7 +22,7 @@ import {
   setOauthConnectSourceForRedirect,
 } from '@/utils/analytics-events';
 import { connectorProviderLabelMap } from '@/utils/label-map/core/connector-provider.label-map';
-import { openOAuthUrl } from '@/utils/oauth';
+import { openOAuthUrl, rememberWahooLogin } from '@/utils/oauth';
 import { CheckCircle2, Link2, Link2Off } from 'lucide-react';
 import { usePostHog } from 'posthog-js/react';
 import { useState } from 'react';
@@ -48,6 +48,7 @@ const DEFAULT_SUPPORTED_PROVIDERS: ConnectorProvider[] = [
   'SUUNTO',
   'POLAR',
   'COROS',
+  'WAHOO',
 ];
 
 export function ConnectorsList({
@@ -80,7 +81,9 @@ export function ConnectorsList({
       });
       // For PKCE providers (like Garmin), store codeVerifier in localStorage
       // Using localStorage instead of sessionStorage to persist across OAuth redirects
-      if (response.codeVerifier) {
+      if (provider.toUpperCase() === 'WAHOO') {
+        rememberWahooLogin(response);
+      } else if (response.codeVerifier) {
         const storageKey = `oauth_code_verifier_${provider.toUpperCase()}`;
         localStorage.setItem(storageKey, response.codeVerifier);
       } else if (provider.toUpperCase() === 'GARMIN') {
@@ -94,11 +97,15 @@ export function ConnectorsList({
   });
 
   const disconnectMutation = useDisconnectProviderMutation({
-    onSuccess: (_, provider) => {
+    onSuccess: (result, provider) => {
       posthog?.capture('provider_disconnected', {
         provider,
         source: oauthConnectSource,
       });
+      if (result.remoteRevoked === false) {
+        toast.warning(m.wahoo_disconnect_remote_pending());
+        return;
+      }
       toast.success(
         m.disconnected_from_provider({
           provider: connectorProviderLabelMap[provider],

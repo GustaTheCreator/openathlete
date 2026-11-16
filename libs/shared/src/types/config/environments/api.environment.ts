@@ -157,6 +157,10 @@ export const ApiEnvSchema = z
       .optional()
       .describe('Garmin OAuth redirect URI (optional)'),
 
+    // Wahoo public OAuth client (PKCE)
+    WAHOO_CLIENT_ID: z.string().optional(),
+    WAHOO_REDIRECT_URI: z.string().url().optional(),
+
     // Suunto OAuth (optional)
     SUUNTO_CLIENT_ID: z
       .string()

@@ -10,7 +10,11 @@ import { ActivityDescriptionService } from './activity-description/activity-desc
 import { CorosAdapter } from './adapters/coros.adapter';
 import { GarminAdapter } from './adapters/garmin.adapter';
 import { SuuntoAdapter } from './adapters/suunto.adapter';
-import { ProviderOAuthController } from './controllers/provider-oauth.controller';
+import { WahooAdapter } from './adapters/wahoo.adapter';
+import {
+  ProviderOAuthController,
+  WahooAuthorizationGuard,
+} from './controllers/provider-oauth.controller';
 import { ProviderExportService } from './export.service';
 import { GarminPersonalClient } from './garmin-personal/garmin-personal-client';
 import {
@@ -28,6 +32,7 @@ import {
   PolarProviderService,
   StravaProviderService,
   SuuntoProviderService,
+  WahooProviderService,
 } from './providers';
 import { ProviderExportScheduler } from './scheduler.service';
 
@@ -56,6 +61,8 @@ import { ProviderExportScheduler } from './scheduler.service';
     GarminAdapter,
     SuuntoAdapter,
     CorosAdapter,
+    WahooAdapter,
+    WahooAuthorizationGuard,
     ProviderExportService,
     ProviderExportScheduler,
     StravaProviderService,
@@ -63,6 +70,7 @@ import { ProviderExportScheduler } from './scheduler.service';
     SuuntoProviderService,
     CorosProviderService,
     PolarProviderService,
+    WahooProviderService,
     ActivityDescriptionService,
   ],
   exports: [
@@ -73,6 +81,7 @@ import { ProviderExportScheduler } from './scheduler.service';
     SuuntoProviderService,
     CorosProviderService,
     PolarProviderService,
+    WahooProviderService,
   ],
 })
 export class ProvidersSyncModule {}

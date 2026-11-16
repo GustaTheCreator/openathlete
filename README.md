@@ -102,6 +102,10 @@ Here is what you need to be able to run OpenAthlete.
 
 ## Development
 
+### Extensão local Tourmalet — Wahoo
+
+Esta cópia baseada em v1.6.0 acrescenta Wahoo para importar atividades e enviar treinos de ciclismo. O fluxo, configuração OAuth, limites e critérios de ativação estão em [SELFHOSTING-SOURCE.md](SELFHOSTING-SOURCE.md). O código personalizado está no ramo `codex/wahoo-integration`; a instalação Tourmalet continua separada e não é atualizada automaticamente por este checkout.
+
 ### Setup
 
 ```sh

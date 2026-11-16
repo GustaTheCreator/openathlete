@@ -6,6 +6,7 @@ jest.mock('./adapters', () => ({
   GarminAdapter: class {},
   SuuntoAdapter: class {},
   CorosAdapter: class {},
+  WahooAdapter: class {},
 }));
 
 const normalized = {
@@ -36,14 +37,21 @@ function setup(existing: Record<string, unknown> | null) {
     deletePlannedWorkout: jest.fn(),
   };
   const analytics = { captureForAthlete: jest.fn() };
+  const wahoo = {
+    upsertPlannedWorkout: jest
+      .fn()
+      .mockResolvedValue({ externalId: 'wahoo-55', scheduleId: 'wahoo-77' }),
+    deletePlannedWorkout: jest.fn(),
+  };
   const service = new ProviderExportService(
     prisma as never,
     garmin as never,
     {} as never,
     {} as never,
+    wahoo as never,
     analytics as never,
   );
-  return { service, prisma, garmin, analytics };
+  return { service, prisma, garmin, wahoo, analytics };
 }
 
 const params = {
@@ -55,6 +63,56 @@ const params = {
 };
 
 describe('ProviderExportService.upsertPlannedExport', () => {
+  it('routes Wahoo exports through its adapter and stores the provider', async () => {
+    const { service, prisma, garmin, wahoo } = setup(null);
+    await service.upsertPlannedExport({ ...params, provider: 'wahoo' });
+    expect(wahoo.upsertPlannedWorkout).toHaveBeenCalledWith(
+      expect.objectContaining({ athleteId: 1, workoutId: 3 }),
+    );
+    expect(garmin.upsertPlannedWorkout).not.toHaveBeenCalled();
+    expect(prisma.providerWorkoutExport.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ provider: 'WAHOO' }),
+      }),
+    );
+  });
+
+  it('keeps the external identifiers when deletion fails', async () => {
+    const { service, prisma, wahoo } = setup(null);
+    prisma.providerWorkoutExport.findMany.mockResolvedValue([
+      {
+        provider: 'WAHOO',
+        athleteId: 1,
+        externalId: '55',
+        scheduleId: '77',
+        plannedDate: new Date('2026-11-15'),
+      },
+    ]);
+    wahoo.deletePlannedWorkout.mockRejectedValue(new Error('unavailable'));
+    await expect(
+      service.deleteExportsForWorkout({ workoutId: 3 }),
+    ).rejects.toThrow('unavailable');
+    expect(prisma.providerWorkoutExport.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('does not forget a stale schedule when removing it fails', async () => {
+    const { service, prisma, garmin } = setup(null);
+    prisma.providerWorkoutExport.findMany.mockResolvedValue([
+      {
+        providerWorkoutExportId: 9,
+        externalId: '55',
+        scheduleId: '77',
+        plannedDate: new Date('2026-11-14'),
+      },
+    ]);
+    garmin.deletePlannedWorkout.mockRejectedValue(new Error('unavailable'));
+    await expect(service.upsertPlannedExport(params)).rejects.toThrow(
+      'unavailable',
+    );
+    expect(prisma.providerWorkoutExport.deleteMany).not.toHaveBeenCalled();
+    expect(garmin.upsertPlannedWorkout).not.toHaveBeenCalled();
+  });
+
   it('reports a workout that reached the device', async () => {
     const { service, analytics } = setup(null);
     await service.upsertPlannedExport(params);

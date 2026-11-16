@@ -11,6 +11,7 @@
  *
  *   node scripts/mobile-version.ts v1.4.2-rc.3
  */
+import { pathToFileURL } from 'node:url';
 
 export interface MobileVersion {
   /** Android versionName: the tag without its leading "v" */
@@ -69,7 +70,10 @@ export function mobileVersionFromTag(tag: string): MobileVersion {
   };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   const tag = process.argv[2];
   if (!tag) {
     console.error('Usage: node scripts/mobile-version.ts <tag>');

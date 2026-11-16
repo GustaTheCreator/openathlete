@@ -7,7 +7,10 @@ import {
   analyticsErrorCodeFromUnknown,
   consumeOauthConnectSource,
 } from '@/utils/analytics-events';
-import { ENABLE_DESCRIPTION_AFTER_OAUTH_KEY } from '@/utils/oauth';
+import {
+  ENABLE_DESCRIPTION_AFTER_OAUTH_KEY,
+  consumeWahooLogin,
+} from '@/utils/oauth';
 import { useQueryClient } from '@tanstack/react-query';
 import posthog from 'posthog-js';
 import { useEffect, useRef } from 'react';
@@ -85,9 +88,18 @@ export function OAuthCallbackPage() {
 
     const code = searchParams.get('code');
     const finalProvider = (provider || '').toUpperCase();
-    const validProviders = ['STRAVA', 'GARMIN', 'SUUNTO', 'COROS', 'POLAR'];
+    const validProviders = [
+      'STRAVA',
+      'GARMIN',
+      'SUUNTO',
+      'COROS',
+      'POLAR',
+      'WAHOO',
+    ];
 
     const failInvalid = () => {
+      if (finalProvider === 'WAHOO')
+        consumeWahooLogin(searchParams.get('state'));
       // Cancelled on the provider's page: a later connection starts afresh
       takeDescriptionIntent();
       const source = consumeOauthConnectSource();
@@ -108,7 +120,17 @@ export function OAuthCallbackPage() {
     // For Garmin (PKCE), retrieve codeVerifier from localStorage
     // Using localStorage instead of sessionStorage to persist across OAuth redirects
     const storageKey = `oauth_code_verifier_${finalProvider}`;
-    const codeVerifier = localStorage.getItem(storageKey);
+    const codeVerifier =
+      finalProvider === 'WAHOO'
+        ? consumeWahooLogin(searchParams.get('state'))
+        : localStorage.getItem(storageKey);
+
+    if (finalProvider === 'WAHOO' && !codeVerifier) {
+      failInvalid();
+      toast.error(m.failed_to_initiate_connection());
+      nav(getPath(['dashboard', 'settings']));
+      return;
+    }
 
     // Garmin requires codeVerifier for PKCE flow
     if (finalProvider === 'GARMIN' && !codeVerifier) {
@@ -133,6 +155,9 @@ export function OAuthCallbackPage() {
       provider: finalProvider as ConnectorProvider,
       code,
       ...(codeVerifier && { codeVerifier }),
+      ...(finalProvider === 'WAHOO' && {
+        state: searchParams.get('state') ?? undefined,
+      }),
       // Strava lists the scopes the user accepted on the redirect only
       ...(searchParams.get('scope') && {
         scope: searchParams.get('scope') ?? undefined,

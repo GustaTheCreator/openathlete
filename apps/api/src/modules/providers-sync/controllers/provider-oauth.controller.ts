@@ -5,11 +5,13 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ExecutionContext,
   Get,
   Headers,
   HttpCode,
   HttpStatus,
   Inject,
+  Injectable,
   Logger,
   Param,
   Patch,
@@ -24,6 +26,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AuthGuard } from '@nestjs/passport';
 import {
   ApiBearerAuth,
@@ -47,6 +50,7 @@ import {
   providerPreferencesSchema,
 } from '@openathlete/shared';
 
+import { ProviderConnectedEvent } from 'src/events/provider-connected.event';
 import { JwtUser, UserTypeGuard } from 'src/modules/auth';
 import { AuthUser } from 'src/modules/auth/decorators/user.decorator';
 import { PrismaService } from 'src/modules/prisma/services/prisma.service';
@@ -57,7 +61,11 @@ import {
   SuuntoWebhookPayload,
 } from '../../core/types/connector';
 import { configuredProviders } from '../base/provider-config';
-import { CorosProviderService, SuuntoProviderService } from '../providers';
+import {
+  CorosProviderService,
+  SuuntoProviderService,
+  WahooProviderService,
+} from '../providers';
 import { GarminProviderService } from '../providers/garmin.provider.service';
 import { PolarProviderService } from '../providers/polar.provider.service';
 import {
@@ -67,6 +75,15 @@ import {
 
 function toConnectorProvider(provider: ConnectorProvider): ConnectorProvider {
   return provider as unknown as ConnectorProvider;
+}
+
+@Injectable()
+export class WahooAuthorizationGuard extends AuthGuard('jwt') {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<Request>();
+    if (String(request.params.provider).toUpperCase() !== 'WAHOO') return true;
+    return (await super.canActivate(context)) as boolean;
+  }
 }
 
 @ApiTags('Provider')
@@ -81,9 +98,11 @@ export class ProviderOAuthController {
     private readonly suuntoProviderService: SuuntoProviderService,
     private readonly corosProviderService: CorosProviderService,
     private readonly polarProviderService: PolarProviderService,
+    private readonly wahooProviderService: WahooProviderService,
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => QueueService))
     private readonly queueService: QueueService,
+    private readonly emitter: EventEmitter2,
   ) {}
 
   private async getAthleteForUser(user: AuthUser) {
@@ -124,6 +143,7 @@ export class ProviderOAuthController {
    * For Garmin (PKCE), also returns code_verifier that must be sent back during token exchange
    */
   @Get(':provider/uri')
+  @UseGuards(WahooAuthorizationGuard)
   @ApiOperation({
     summary: 'Get OAuth authorization URI for a provider',
     description:
@@ -177,6 +197,7 @@ export class ProviderOAuthController {
   async getAuthorizationUri(
     @Param('provider') provider: string,
     @Query('region') region?: string,
+    @JwtUser() user?: AuthUser,
   ) {
     const providerEnum = provider.toUpperCase() as ConnectorProvider;
     this.assertConfigured(providerEnum);
@@ -201,6 +222,16 @@ export class ProviderOAuthController {
         );
       case ConnectorProvider.POLAR:
         return { uri: this.polarProviderService.getAuthorizationUri() };
+      case ConnectorProvider.WAHOO: {
+        if (!user) throw new UnauthorizedException();
+        const login = this.wahooProviderService.getAuthorizationUriWithPKCE();
+        await this.queueService.rememberWahooOAuth(
+          login.state,
+          user.userId,
+          login.codeVerifier,
+        );
+        return login;
+      }
       default:
         throw new BadRequestException(`Provider ${provider} not supported`);
     }
@@ -294,6 +325,7 @@ export class ProviderOAuthController {
     body: {
       code: string;
       codeVerifier?: string;
+      state?: string;
       /** Scopes the user accepted, from the redirect (Strava) */
       scope?: string;
     },
@@ -302,6 +334,43 @@ export class ProviderOAuthController {
     const providerEnum = provider.toUpperCase() as ConnectorProvider;
 
     const athlete = await this.getAthleteForUser(user);
+
+    if (providerEnum === ConnectorProvider.WAHOO) {
+      this.assertConfigured(providerEnum);
+      if (typeof code !== 'string' || !code.trim() || code.length > 4096) {
+        throw new BadRequestException(
+          'A valid OAuth code is required for Wahoo',
+        );
+      }
+      if (typeof body.codeVerifier !== 'string' || !body.codeVerifier) {
+        throw new BadRequestException('codeVerifier is required for Wahoo');
+      }
+      if (
+        typeof body.state !== 'string' ||
+        !(await this.queueService.consumeWahooOAuth(
+          body.state,
+          user.userId,
+          body.codeVerifier,
+        ))
+      ) {
+        throw new BadRequestException('Invalid or expired Wahoo authorization');
+      }
+      const account = await this.wahooProviderService.connect(
+        code,
+        body.codeVerifier,
+        athlete.athleteId,
+      );
+      this.emitter.emit(
+        ProviderConnectedEvent.SLUG,
+        new ProviderConnectedEvent(account.athleteId, 'WAHOO'),
+      );
+      return {
+        providerAccountId: account.providerAccountId,
+        provider: account.provider,
+        status: account.status,
+        athleteId: account.athleteId,
+      };
+    }
 
     switch (providerEnum) {
       case ConnectorProvider.STRAVA:
@@ -318,11 +387,21 @@ export class ProviderOAuthController {
             'codeVerifier is required for Garmin OAuth (PKCE flow)',
           );
         }
-        return this.garminProviderService.connect(
+        const account = await this.garminProviderService.connect(
           code,
           codeVerifier,
           athlete.athleteId,
         );
+        this.emitter.emit(
+          ProviderConnectedEvent.SLUG,
+          new ProviderConnectedEvent(account.athleteId, 'GARMIN'),
+        );
+        return {
+          providerAccountId: account.providerAccountId,
+          provider: account.provider,
+          status: account.status,
+          athleteId: account.athleteId,
+        };
       }
       case ConnectorProvider.SUUNTO: {
         const tokenResponse =
@@ -435,6 +514,15 @@ export class ProviderOAuthController {
 
     if (providerEnum === ConnectorProvider.POLAR) {
       await this.polarProviderService.disconnect(account);
+    }
+
+    if (providerEnum === ConnectorProvider.WAHOO) {
+      const remoteRevoked = await this.wahooProviderService.disconnect(account);
+      return {
+        success: true,
+        remoteRevoked,
+        message: `Disconnected from ${provider}`,
+      };
     }
 
     // Update status to revoked instead of deleting
@@ -734,6 +822,16 @@ export class ProviderOAuthController {
       data,
     });
 
+    if (
+      (providerEnum === ConnectorProvider.WAHOO ||
+        providerEnum === ConnectorProvider.GARMIN) &&
+      body.exportWorkoutsEnabled === true
+    ) {
+      this.emitter.emit(
+        ProviderConnectedEvent.SLUG,
+        new ProviderConnectedEvent(account.athleteId, providerEnum),
+      );
+    }
     // Polar sends webhooks for new data only: fetch the days it already has
     if (
       providerEnum === ConnectorProvider.POLAR &&

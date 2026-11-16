@@ -7,12 +7,17 @@ import type { NormalizedWorkout } from '@openathlete/shared';
 
 import { AnalyticsService } from '../analytics/analytics.service';
 import { PrismaService } from '../prisma/services/prisma.service';
-import { CorosAdapter, GarminAdapter, SuuntoAdapter } from './adapters';
+import {
+  CorosAdapter,
+  GarminAdapter,
+  SuuntoAdapter,
+  WahooAdapter,
+} from './adapters';
 import { mapToCoros, mapToGarmin, mapToSuunto } from './mapping';
 import type { ProviderAdapter } from './provider-adapter.interface';
 
-type ProviderKey = 'garmin' | 'suunto' | 'coros';
-type ProviderEnum = 'GARMIN' | 'SUUNTO' | 'COROS';
+type ProviderKey = 'garmin' | 'suunto' | 'coros' | 'wahoo';
+type ProviderEnum = 'GARMIN' | 'SUUNTO' | 'COROS' | 'WAHOO';
 
 function providerKeyToEnum(provider: ProviderKey): ProviderEnum {
   switch (provider) {
@@ -22,6 +27,8 @@ function providerKeyToEnum(provider: ProviderKey): ProviderEnum {
       return 'SUUNTO';
     case 'coros':
       return 'COROS';
+    case 'wahoo':
+      return 'WAHOO';
   }
 }
 
@@ -36,12 +43,14 @@ export class ProviderExportService {
     garminAdapter: GarminAdapter,
     suuntoAdapter: SuuntoAdapter,
     corosAdapter: CorosAdapter,
+    wahooAdapter: WahooAdapter,
     @Optional() private readonly analytics?: AnalyticsService,
   ) {
     this.adapters = {
       garmin: garminAdapter,
       suunto: suuntoAdapter,
       coros: corosAdapter,
+      wahoo: wahooAdapter,
     } as const;
   }
 
@@ -62,6 +71,8 @@ export class ProviderExportService {
         return mapToSuunto(date, normalized);
       case 'coros':
         return mapToCoros(date, normalized);
+      case 'wahoo':
+        return { date, ...normalized };
     }
   }
 
@@ -104,6 +115,7 @@ export class ProviderExportService {
           this.logger.warn(
             `Failed to delete stale planned workout for provider ${provider} workout ${workoutId}: ${err instanceof Error ? err.message : String(err)}`,
           );
+          throw err;
         }
       }
 
@@ -239,6 +251,7 @@ export class ProviderExportService {
           this.logger.warn(
             `Failed to delete planned workout for provider ${exp.provider} workout ${exp.workoutId}: ${err instanceof Error ? err.message : String(err)}`,
           );
+          throw err;
         }
       }
     }

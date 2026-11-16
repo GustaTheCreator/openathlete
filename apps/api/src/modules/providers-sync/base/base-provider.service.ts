@@ -275,6 +275,7 @@ export abstract class BaseProviderService {
     scopes?: string;
     externalUserId?: string;
     oauthClientId?: string;
+    oauthCodeVerifier?: string;
     region?: string;
   }): Promise<ProviderAccount> {
     const {
@@ -285,6 +286,7 @@ export abstract class BaseProviderService {
       scopes,
       externalUserId,
       oauthClientId,
+      oauthCodeVerifier,
       region,
     } = params;
 
@@ -320,6 +322,7 @@ export abstract class BaseProviderService {
           status: 'active',
           externalUserId: externalUserId ?? existing.externalUserId,
           oauthClientId: oauthClientId ?? existing.oauthClientId,
+          oauthCodeVerifier,
           region: region ?? existing.region,
         },
       });
@@ -336,6 +339,7 @@ export abstract class BaseProviderService {
         status: 'active',
         externalUserId: externalUserId ?? null,
         oauthClientId: oauthClientId ?? null,
+        oauthCodeVerifier,
         region: region ?? null,
       },
     });

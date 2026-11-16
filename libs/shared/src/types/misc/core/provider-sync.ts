@@ -27,6 +27,13 @@ const providerSpecificCapabilities: Partial<
     supportsFullImport: true,
     writeActivityDescription: true,
   },
+  WAHOO: {
+    importActivities: true,
+    exportWorkouts: true,
+    importMetrics: false,
+    supportsFullImport: false,
+    writeActivityDescription: false,
+  },
   GARMIN: {
     importActivities: true,
     exportWorkouts: true,

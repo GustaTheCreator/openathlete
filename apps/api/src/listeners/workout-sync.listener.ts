@@ -12,7 +12,7 @@ import { WorkoutPlannedChangedEvent } from 'src/events';
 import { PrismaService } from 'src/modules/prisma/services/prisma.service';
 import { ProviderExportService } from 'src/modules/providers-sync/export.service';
 
-type ProviderKey = 'garmin' | 'suunto' | 'coros';
+type ProviderKey = 'garmin' | 'suunto' | 'coros' | 'wahoo';
 
 @Injectable()
 export class WorkoutSyncListener {
@@ -30,7 +30,7 @@ export class WorkoutSyncListener {
     // Check if date is within next 7 days (UTC)
     const now = startOfDay(new Date());
     const endDate = new Date(now);
-    endDate.setUTCDate(endDate.getUTCDate() + 7);
+    endDate.setUTCDate(endDate.getUTCDate() + 6);
     endDate.setUTCHours(23, 59, 59, 999);
 
     const eventDate = new Date(startDate);
@@ -61,7 +61,7 @@ export class WorkoutSyncListener {
     const providerAccounts = await this.prisma.providerAccount.findMany({
       where: {
         athleteId: athleteId,
-        provider: { in: ['GARMIN', 'SUUNTO', 'COROS'] },
+        provider: { in: ['GARMIN', 'SUUNTO', 'COROS', 'WAHOO'] },
         status: 'active',
         exportWorkoutsEnabled: true,
       },

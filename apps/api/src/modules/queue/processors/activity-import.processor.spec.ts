@@ -12,6 +12,7 @@ jest.mock('../../providers-sync/providers', () => ({
   PolarProviderService: class {},
   StravaProviderService: class {},
   SuuntoProviderService: class {},
+  WahooProviderService: class {},
 }));
 
 jest.mock('../../core/services/activity-duplicate.service', () => ({
@@ -68,6 +69,7 @@ function setup(
   const processor = new ActivityImportProcessor(
     prisma as never,
     strava as never,
+    {} as never,
     {} as never,
     {} as never,
     {} as never,

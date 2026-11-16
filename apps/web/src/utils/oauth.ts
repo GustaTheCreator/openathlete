@@ -37,3 +37,42 @@ export async function closeOAuthBrowser(): Promise<void> {
  */
 export const ENABLE_DESCRIPTION_AFTER_OAUTH_KEY =
   'oauth_enable_activity_description_STRAVA';
+
+const WAHOO_LOGIN_KEY = 'oauth_pending_WAHOO_';
+
+export function rememberWahooLogin(login: {
+  state?: string;
+  codeVerifier?: string;
+}): void {
+  if (!login.state || !login.codeVerifier) {
+    throw new Error('Invalid Wahoo authorization response');
+  }
+  localStorage.setItem(
+    WAHOO_LOGIN_KEY + login.state,
+    JSON.stringify({
+      state: login.state,
+      verifier: login.codeVerifier,
+      expiresAt: Date.now() + 10 * 60_000,
+    }),
+  );
+}
+
+/** Consume the login once, including failed callbacks, to prevent replay. */
+export function consumeWahooLogin(state: string | null): string | null {
+  try {
+    if (!state) return null;
+    const key = WAHOO_LOGIN_KEY + state;
+    const stored = localStorage.getItem(key);
+    localStorage.removeItem(key);
+    if (!stored) return null;
+    const login = JSON.parse(stored);
+    return login.state === state &&
+      typeof login.verifier === 'string' &&
+      Number.isFinite(login.expiresAt) &&
+      login.expiresAt > Date.now()
+      ? login.verifier
+      : null;
+  } catch {
+    return null;
+  }
+}

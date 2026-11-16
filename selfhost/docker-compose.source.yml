@@ -1,0 +1,5 @@
+services:
+  web:
+    volumes:
+      - ./selfhost/41-source-link.sh:/docker-entrypoint.d/41-source-link.sh:ro
+      - ./public-source/openathlete-wahoo-a11ee107209c.tar.gz:/usr/share/nginx/html/source/openathlete-wahoo-a11ee107209c.tar.gz:ro

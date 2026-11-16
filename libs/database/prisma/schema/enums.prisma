@@ -43,6 +43,7 @@ enum ConnectorProvider {
   SUUNTO
   COROS
   POLAR
+  WAHOO
 
   @@map("connector_provider")
 }

@@ -16,4 +16,10 @@ describe('offered connectors', () => {
       'STRAVA',
     ]);
   });
+
+  it('shows Wahoo only when configured or already connected', () => {
+    expect(offeredProviders(['WAHOO'], [], [])).toEqual([]);
+    expect(offeredProviders(['WAHOO'], ['WAHOO'], [])).toEqual(['WAHOO']);
+    expect(offeredProviders(['WAHOO'], [], ['WAHOO'])).toEqual(['WAHOO']);
+  });
 });
