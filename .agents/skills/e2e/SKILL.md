@@ -47,3 +47,7 @@ After changing API or web code, run `stack:up` again: it rebuilds the images. Th
 2. Read the service logs: `pnpm e2e stack:logs`. The CI job prints them when it fails.
 3. Reproduce locally with `--project <name> --debug`, or replay the trace with `npx playwright show-trace`.
 4. If the setup project fails, every browser test is skipped: fix login or signup first.
+
+## Handoff:
+
+Report the exact E2E command, project and result, plus any environment or Docker limitation. Return reproducible failures with the report or trace location.

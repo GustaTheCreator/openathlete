@@ -5,13 +5,15 @@ description: Run the right OpenAthlete checks before committing or pushing a cha
 
 # Verify a change
 
-Always start with the fast suite, which mirrors the CI static jobs:
+For application changes, start with the fast suite, which mirrors the CI static jobs:
 
 ```bash
 scripts/verify.sh
 ```
 
 It installs dependencies, generates the Prisma client, builds `libs/shared`, compiles translations, checks locale parity, then lints, type-checks and runs every unit test (in a non-UTC timezone). It stops at the first failure and prints that step's log.
+
+For documentation-only edits or file/link organization, check changed paths, relative links and any changed instruction frontmatter; run only checks for tooling whose behavior changed. Reuse earlier unchanged-code verification when applicable instead of rebuilding the entire application suite.
 
 Then add what the change touches:
 
@@ -33,4 +35,8 @@ Then add what the change touches:
 
 ## Report
 
-State which suites ran and their result. If something could not be run (Docker unavailable, a port in use), say so explicitly rather than implying it passed.
+For application changes, run `scripts/verify.sh` and add relevant gates from the table. For documentation-only changes, report the targeted path/link/frontmatter checks and any tooling checks; do not imply the application suite ran.
+
+## Handoff:
+
+Report exact commands and outcomes, including skipped suites and why. Pass failures to the implementation owner with the first failing step and its relevant log.

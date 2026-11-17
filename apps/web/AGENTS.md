@@ -10,7 +10,7 @@ The same build ships to Vercel (hosted), to the Docker image (self-hosted) and t
   - `<domain>.hooks.ts`: `useXQuery` and `useXMutation`. Mutations invalidate the queries they affect.
 - `src/pages/`: route entry points. `src/views/`: page bodies. `src/components/`: reusable pieces, with shadcn/ui primitives in `components/ui/`.
 - `src/routes/`: route tree (`sections/*.routes.tsx`). Build URLs with `getPath([...])` from `routes/paths.ts`.
-- `src/contexts/`: auth (tokens in `localStorage`), current space (athlete or coach), chatbot.
+- `src/contexts/`: auth state, current space (athlete or coach), chatbot. Session credentials stay in memory: browser/PWA refresh uses the HttpOnly refresh cookie; Capacitor uses memory only. Never persist access or refresh tokens in `localStorage` or other browser storage.
 - `messages/{en,fr,it,es,pt-BR}.json`: Paraglide catalogs. `src/paraglide/` is generated.
 
 ## Rules

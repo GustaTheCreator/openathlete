@@ -40,3 +40,7 @@ Web app supported languages: English (`en`), French (`fr`), Italian (`it`), Span
 ## Verify
 
 `scripts/verify.sh` runs the parity check and compiles the catalogs. The E2E test `renders the dashboard in <locale>` checks each locale renders.
+
+## Handoff:
+
+Report changed catalogs and generated output, locale parity and compile results, and any untranslated copy that still needs native-language review.

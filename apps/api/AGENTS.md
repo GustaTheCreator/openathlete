@@ -33,7 +33,7 @@ The same image runs as the HTTP API and as the background worker. Which BullMQ p
   - throw `UnrecoverableError` for failures a retry cannot fix;
   - clear any "in progress" state once the last attempt fails.
 - **Optional third parties** (Stripe, OpenAI, Brevo, Firebase): create the client on first use and throw `ServiceUnavailableException` when it is not configured. The API must boot with only `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET_KEY` and `HASH_PEPPER`.
-- **Emails**: templates in `modules/notification/emails/templates/` hold one translation block per language (`FR`, `EN`, `IT`, `ES`). Send through the `SendEmailEvent`; `EmailTransportService` (Brevo) is a no-op without a key.
+- **Emails**: templates in `modules/notification/emails/templates/` hold one translation block per supported email language, including `FR`, `EN`, `IT`, `ES` and `PT-BR` where present. Send through the `SendEmailEvent`; `EmailTransportService` prefers Brevo when `BREVO_API_KEY` is set, otherwise uses SMTP when `SMTP_HOST` is set, and disables email when neither is configured.
 
 ## Data and deletion
 
@@ -70,7 +70,7 @@ Every model call goes through `modules/ai`. No agent runs on a hardcoded model o
   - a hosted default in `common/constants/ai-models.constant.ts`;
   - a label in the web app (`aiTaskLabel`);
   - a call through the resolver and `AiService`.
-- **Security**: keys are encrypted with AES-256-GCM (derived from `HASH_PEPPER`) and never returned. Custom endpoints and local-URL providers are refused unless `AI_ALLOW_CUSTOM_ENDPOINTS` (default: off with Stripe), since the server calls those URLs.
+- **Security**: keys are encrypted with AES-256-GCM (derived from `HASH_PEPPER`) and never returned. Custom endpoints and local-URL providers are refused unless `AI_ALLOW_CUSTOM_ENDPOINTS` (default: off), since the server calls those URLs.
 - **Verify against the build**: `pnpm build && pnpm test:agents` exercises fake OpenAI, Anthropic and OpenAI-compatible APIs. It checks which key each provider receives and how errors map, and that the module graph loads (circular imports).
 
 ## Tests

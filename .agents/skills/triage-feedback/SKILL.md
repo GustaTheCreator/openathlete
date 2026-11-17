@@ -33,3 +33,7 @@ description: Gather OpenAthlete user feedback from GitHub (issues, PRs, discussi
 - A prioritized table: item, type, severity, sources with dates, status (fixed in `<sha>` / to do / needs a decision).
 - Draft replies, ready to paste. Use the user's language on Discord and English on GitHub. Be short and specific: what was done, what to do now, or a question.
 - Proposed GitHub issues for confirmed bugs and accepted features, with reproduction steps and acceptance criteria. Show them to the maintainer before creating them.
+
+## Handoff:
+
+Return prioritized findings and draft replies for maintainer review. Do not create issues or post replies without explicit authorization for that action.

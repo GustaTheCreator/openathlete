@@ -2,6 +2,18 @@
 
 Tourmalet runs the public OpenAthlete fork from `GustaTheCreator/openathlete`. Development happens on short-lived `codex/*` branches and merges into the stable `tourmalet` branch through pull requests. The upstream `main` branch and its `v*` release process remain separate.
 
+## Branches and cleanup
+
+- `tourmalet` is the protected default and stable branch. Deployment installs a
+  published release from it, pinned by digest, rather than the branch working tree.
+- `main` retains upstream development. Updating the fork from upstream is a
+  separate reviewed change; do not merge divergent upstream work just to rename
+  the production branch.
+- `codex/*` branches contain work in progress. After integration, remove a source
+  branch only when authorized and after checking that it contains no unique work.
+  Squash merges retain different commit IDs, so verify the merged PR and content
+  instead of relying only on `git branch --merged`.
+
 ## Checks
 
 GitHub Actions runs lint, type checks, the unit suite in three time zones, database integration tests, documentation checks, end-to-end tests, application builds, deployment tests, and release-helper tests. The stable branch protection should require the single `CI passed` check, which succeeds only when every job succeeds. Before building release images, the tag workflow verifies that a successful `push` CI run exists for the exact commit on `tourmalet`; it does not repeat the full CI run.

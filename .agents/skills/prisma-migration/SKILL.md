@@ -34,3 +34,7 @@ scripts/verify.sh --integration
 ```
 
 It applies every migration to an empty database, then runs the integration tests, including the account deletion test that inspects foreign keys. Mention the migration in the commit body, as the deploy runs it.
+
+## Handoff:
+
+Report the migration path, SQL safety review, affected deletion coverage and verification result. Stop before applying to a live database or deploying without explicit task authorization.

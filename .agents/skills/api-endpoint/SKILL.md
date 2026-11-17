@@ -27,7 +27,7 @@ Work from the contract outwards, in this order. Each step names the file to foll
   - check access through CASL (`this.abilities.getFor({ user })`, then `accessibleBy(ability, 'read' | 'update').<Model>` in the Prisma `where`);
   - throw Nest HTTP exceptions;
   - use `$transaction` for several dependent writes.
-- Anything slow (provider calls, AI, bulk work) goes in a BullMQ job. See "Patterns" in `apps/api/CLAUDE.md`.
+- Anything slow (provider calls, AI, bulk work) goes in a BullMQ job. See "Patterns" in `apps/api/AGENTS.md`.
 - Unauthenticated public endpoints need a rate limit preset from `common/security/rate-limits.ts`.
 - **Unit test** the service logic (`*.spec.ts`), with Prisma mocked when the logic is not SQL. A query whose correctness depends on SQL gets an integration test (`*.int-spec.ts`).
 
@@ -39,7 +39,7 @@ Work from the contract outwards, in this order. Each step names the file to foll
 - UI:
   - forms use React Hook Form with the shared schema and the `RHF*` fields;
   - success and error feedback through `toast`;
-  - every string through Paraglide, in all four locales (`i18n` skill).
+  - every string through Paraglide, in all five locales (`en`, `fr`, `it`, `es`, `pt-BR`; `i18n` skill).
 
 ## 4. Verify
 
@@ -48,3 +48,7 @@ scripts/verify.sh            # plus --integration if SQL changed, --e2e for a ne
 ```
 
 For a new user-facing flow, add a Playwright test in `e2e/tests/web/` (`e2e` skill). Open http://localhost:3000/docs to check the Swagger entry reads well.
+
+## Handoff:
+
+When contract, API, web integration, tests and verification are complete, report the touched paths and checks. Escalate product or authorization decisions to the maintainer before choosing behavior.

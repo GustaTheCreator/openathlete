@@ -1,5 +1,10 @@
 # Contributing to OpenAthlete
 
+For this Tourmalet fork, create `codex/*` branches from `tourmalet` and target
+`tourmalet` in pull requests to `GustaTheCreator/openathlete`. `main` keeps
+upstream development separate. Run commands from the repository root; see
+[the documentation index](docs/README.md) and [release process](docs/DEPLOYMENT.md).
+
 Thank you for your interest in contributing to OpenAthlete! 🎉 We're excited to have you join our community of developers, athletes, and enthusiasts building the future of open-source training platforms.
 
 This guide will help you understand how to contribute effectively to the project. Whether you're fixing bugs, adding features, improving documentation, or helping with translations, your contributions are valuable and appreciated.
@@ -64,13 +69,13 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 There are many ways to contribute to OpenAthlete, and not all of them require writing code:
 
 ### 🐛 Report Bugs
-- Use our [bug report template](.github/ISSUE_TEMPLATE/bug_report.yml)
+- Use our [bug report template](ISSUE_TEMPLATE/bug_report.yml)
 - Search existing issues first to avoid duplicates
 - Provide clear steps to reproduce
 - Include relevant environment details
 
 ### 💡 Suggest Features
-- Use our [feature request template](.github/ISSUE_TEMPLATE/feature_request.yml)
+- Use our [feature request template](ISSUE_TEMPLATE/feature_request.yml)
 - Explain the problem you're trying to solve
 - Describe your proposed solution
 - Consider alternative approaches
@@ -148,18 +153,18 @@ Before you begin, ensure you have the following installed:
    ```
 
 4. **Set up environment variables:**
-   
+
    **Frontend:**
    ```bash
    cp apps/web/.env.example apps/web/.env
    ```
-   
+
    **Backend and database:**
    ```bash
    cp apps/api/.env.example apps/api/.env
    cp libs/database/.env.example libs/database/.env
    ```
-   
+
    Update the `.env` files with your local configuration. At minimum, you'll need:
    - `DATABASE_URL` - PostgreSQL connection string (e.g., `postgresql://user:password@localhost:5432/openathlete`)
    - `JWT_SECRET_KEY` and `HASH_PEPPER` - secrets of at least 32 characters (generate with `openssl rand -base64 48`)
@@ -190,7 +195,7 @@ Before you begin, ensure you have the following installed:
    ```bash
    pnpm dev
    ```
-   
+
    This will start:
    - **Frontend** at `http://localhost:5173`
    - **Backend API** at `http://localhost:3000`
@@ -269,38 +274,34 @@ Create descriptive branches for your changes:
 
 ```bash
 # Features
-git checkout -b feature/add-workout-export
+git switch -c codex/add-workout-export
 
 # Bug fixes
-git checkout -b fix/login-error-handling
+git switch -c codex/fix-login-error-handling
 
 # Documentation
-git checkout -b docs/update-api-docs
+git switch -c codex/update-api-docs
 
 # Refactoring
-git checkout -b refactor/improve-auth-service
+git switch -c codex/improve-auth-service
 ```
 
-**Branch naming conventions:**
-- `feature/` - New features
-- `fix/` - Bug fixes
-- `docs/` - Documentation changes
-- `refactor/` - Code refactoring
-- `test/` - Adding or updating tests
-- `chore/` - Maintenance tasks
+Use the `codex/` prefix with a short description of the change. Keep branches
+short-lived and delete them after integration when authorized; do not delete a
+branch with unique work or rewrite shared history.
 
 ### Making Changes
 
-1. **Update your fork:**
+1. **Update the stable branch from a clean working tree:**
    ```bash
-   git fetch upstream
-   git checkout main
-   git merge upstream/main
+   git fetch origin
+   git switch tourmalet
+   git pull --ff-only origin tourmalet
    ```
 
 2. **Create your branch:**
    ```bash
-   git checkout -b feature/your-feature-name
+   git switch -c codex/your-feature-name
    ```
 
 3. **Make your changes:**
@@ -313,10 +314,10 @@ git checkout -b refactor/improve-auth-service
    ```bash
    # Type checking
    pnpm tsc:check
-   
+
    # Linting
    pnpm lint
-   
+
    # Formatting
    pnpm format
    ```
@@ -328,7 +329,7 @@ git checkout -b refactor/improve-auth-service
    ```bash
    git push origin feature/your-feature-name
    ```
-   
+
    Then create a pull request on GitHub.
 
 ### Pre-commit Checklist
@@ -559,7 +560,7 @@ model Workout {
 4. Use in your component:
    ```typescript
    import { m } from '@/paraglide/messages';
-   
+
    function MyComponent() {
      return <div>{m.workout_created_successfully()}</div>;
    }
@@ -631,7 +632,7 @@ Add tests with every bug fix and feature, at the lowest level that catches the r
 
 Before submitting your PR, ensure:
 
-- [ ] Your branch is up to date with `upstream/main`
+- [ ] Your branch is up to date with the target `tourmalet` branch
 - [ ] All tests pass (if applicable)
 - [ ] Type checking passes: `pnpm tsc:check`
 - [ ] Linting passes: `pnpm lint`
@@ -685,12 +686,12 @@ Related to #456
 ```
 
 **PR Process:**
-1. **Create your PR** from your fork to `openathleteorg/openathlete`
+1. **Create your PR** targeting `tourmalet` in `GustaTheCreator/openathlete`; submit upstream changes separately when intended
 2. **Fill out the PR template** completely
 3. **Link related issues** using keywords (e.g., "Closes #123")
 4. **Request review** from maintainers
 5. **Address feedback** promptly and professionally
-6. **Keep your branch updated** by rebasing on `upstream/main` if needed
+6. **Keep your branch updated** with `origin/tourmalet`, without rewriting shared history
 7. **Once approved**, a maintainer will merge your PR
 
 **What happens next:**
@@ -779,11 +780,11 @@ Closes #123
 ```typescript
 /**
  * Calculates training load based on workout duration and intensity.
- * 
+ *
  * @param duration - Workout duration in minutes
  * @param intensity - Intensity level (1-10)
  * @returns Training load points
- * 
+ *
  * @example
  * ```typescript
  * const load = calculateTrainingLoad(60, 7);
@@ -836,7 +837,7 @@ Thank you for helping make OpenAthlete better! 🎉
 
 ## License
 
-By contributing to OpenAthlete, you agree that your contributions will be licensed under the project's [MPL-2.0 License](LICENSE).
+By contributing to OpenAthlete, you agree that your contributions will be licensed under the project's [AGPL-3.0-only license](../LICENSE).
 
 ---
 
