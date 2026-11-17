@@ -2379,6 +2379,7 @@
   "admin_cancel_invitation_message": "The invitee will no longer be able to use this invitation.",
   "my_training": "My training",
   "my_athletes": "My athletes",
+  "coach_and_athlete": "Coach and athlete",
   "invitation_purpose": "Invitation purpose",
   "invitation_purpose_personal": "My athlete profile",
   "invitation_purpose_personal_description": "Connect this coach to your personal athlete profile. They will see its coaching data.",

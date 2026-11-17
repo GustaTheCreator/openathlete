@@ -2379,6 +2379,7 @@
   "admin_cancel_invitation_message": "L'invitato non potrà più usare questo invito.",
   "my_training": "I miei allenamenti",
   "my_athletes": "I miei atleti",
+  "coach_and_athlete": "Allenatore e atleta",
   "invitation_purpose": "Finalità dell'invito",
   "invitation_purpose_personal": "Il mio profilo atleta",
   "invitation_purpose_personal_description": "Collega questo allenatore al tuo profilo personale da atleta. Potrà vedere i dati di allenamento del profilo.",

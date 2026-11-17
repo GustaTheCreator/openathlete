@@ -28,6 +28,7 @@ import { useLanguageSync } from '@/hooks/use-language-sync';
 import { m } from '@/paraglide/messages';
 import { getLocale } from '@/paraglide/runtime';
 import { getPath } from '@/routes/paths';
+import { sportsRoleIdentityLabel } from '@/utils/label-map/core/user-role.label-map';
 import { SUPPORTED_LOCALES, getLocaleName } from '@/utils/locales';
 import {
   ChevronsUpDown,
@@ -49,6 +50,7 @@ const planNameMap: Record<SubscriptionPlan, string> = {
 export function NavUser() {
   const { logout, user } = useAuthContext();
   const roles = useUserRoles();
+  const sportsRoleIdentity = sportsRoleIdentityLabel(roles);
   const { data: subscription } = useCurrentSubscription();
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -92,7 +94,9 @@ export function NavUser() {
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{fullName}</span>
-                <span className="truncate text-xs">{user.email}</span>
+                <span className="truncate text-xs">
+                  {sportsRoleIdentity ?? user.email}
+                </span>
               </div>
               <ChevronsUpDown className="ml-auto size-4" />
             </SidebarMenuButton>
@@ -119,6 +123,11 @@ export function NavUser() {
                       </Badge>
                     )}
                   </div>
+                  {sportsRoleIdentity && (
+                    <span className="truncate text-xs text-muted-foreground">
+                      {sportsRoleIdentity}
+                    </span>
+                  )}
                   <span className="truncate text-xs">{user.email}</span>
                 </div>
               </div>

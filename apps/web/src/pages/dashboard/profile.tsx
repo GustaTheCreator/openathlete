@@ -10,6 +10,7 @@ import { usePushPermission } from '@/hooks/use-push-permission';
 import { m } from '@/paraglide/messages';
 import { getLocale } from '@/paraglide/runtime';
 import { getPath } from '@/routes/paths';
+import { sportsRoleIdentityLabel } from '@/utils/label-map/core/user-role.label-map';
 import { SUPPORTED_LOCALES, getLocaleName } from '@/utils/locales';
 import {
   SETTINGS_TAB_ICONS,
@@ -129,6 +130,7 @@ function MeScreen() {
   const { user, logout } = useAuthContext();
   const roles = useUserRoles();
   const sportsRoles = getSportsRoles(roles ?? []);
+  const sportsRoleIdentity = sportsRoleIdentityLabel(roles);
   const { space, setSpace } = useSpaceContext();
   const { trainingTabs, appTabs, tabLabels } = useSettingsTabs();
   const { syncLanguage } = useLanguageSync();
@@ -153,6 +155,11 @@ function MeScreen() {
           <span className="block truncate text-lg font-semibold tracking-tight">
             {user.firstName} {user.lastName}
           </span>
+          {sportsRoleIdentity && (
+            <span className="block truncate text-sm text-muted-foreground">
+              {sportsRoleIdentity}
+            </span>
+          )}
           <span className="block text-sm text-muted-foreground">
             {m.me_edit_profile()}
           </span>
