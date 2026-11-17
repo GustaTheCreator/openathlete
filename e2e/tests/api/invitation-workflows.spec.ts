@@ -63,9 +63,8 @@ test('a COLLEAGUE invitation grants coach access without linking athlete profile
 test('a PERSONAL invitation links the issuer athlete profile to the invited coach', async ({
   request,
 }) => {
-  const athlete = await createAthlete(request, {
-    roles: ['ATHLETE', 'COACH'],
-  });
+  const issuer = await createCoachWithAthlete(request);
+  const athlete = issuer.coach;
   const coach = await createAthlete(request, { roles: ['ATHLETE', 'COACH'] });
   const invitation = await request.post(`${API_URL}/athlete/invite/coach`, {
     headers: apiHeaders(undefined, athlete.accessToken),
@@ -94,7 +93,11 @@ test('a PERSONAL invitation links the issuer athlete profile to the invited coac
     headers: apiHeaders(undefined, coach.accessToken),
   });
   expect(coached.status(), await coached.text()).toBe(200);
-  expect(await coached.json()).toEqual([]);
+  const coachedAthletes = (await coached.json()) as { athleteId: number }[];
+  expect(coachedAthletes).toHaveLength(1);
+  expect(coachedAthletes.map(({ athleteId }) => athleteId)).not.toContain(
+    issuer.athleteId,
+  );
 });
 
 test('an open athlete invitation is verifiable, accepted once, then spent', async ({

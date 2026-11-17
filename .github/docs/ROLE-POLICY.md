@@ -144,6 +144,13 @@ The schema changes do not justify dropping invitation rows or restoring an
 older database over new data. Prefer a forward correction; assess old-code
 compatibility before rolling back a release that has emitted new purposes.
 
+The 1.6.1 Prisma client cannot read a user whose roles include SUPER_ADMIN.
+Perform initial grants only after the new application is healthy. Automatic
+activation rollback can recover the previous image before those grants; after
+granting roles or using new invitation purposes, prefer a compatible forward
+fix. Returning to 1.6.1 requires an explicitly reviewed role/invitation recovery
+before changing images. Do not restore an old database over newer athlete data.
+
 ## Verification
 
 Use Node 22 and pnpm 9 and the repository's verification entry point:
