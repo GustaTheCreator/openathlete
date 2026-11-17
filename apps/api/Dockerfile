@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---- Build stage ----
-FROM node:22.23.4-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS build
+FROM node:22.23.4-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS database-build
 WORKDIR /app
 ENV NODE_OPTIONS=--max-old-space-size=1536
 
@@ -29,6 +29,9 @@ COPY libs/database/ ./
 RUN NODE_ENV=development pnpm db:generate
 RUN NODE_ENV=development pnpm build:config
 
+# ---- Application build stage ----
+FROM database-build AS build
+
 WORKDIR /app/libs/shared
 COPY libs/shared/ ./
 RUN NODE_ENV=development pnpm build
@@ -38,18 +41,27 @@ COPY apps/api/ ./
 RUN NODE_ENV=development pnpm build
 RUN pnpm test:agents
 
+# ---- One-shot database migration image ----
+FROM node:22.23.4-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS migrator
+WORKDIR /app/libs/database
+RUN apk add --no-cache openssl \
+  && npm install -g prisma@6.19.3 \
+  && npm cache clean --force
+COPY --from=database-build /app/libs/database/prisma.config.js ./prisma.config.js
+COPY --from=database-build /app/libs/database/prisma ./prisma
+CMD ["prisma", "migrate", "deploy"]
+
 # ---- Runtime stage ----
 FROM node:22.23.4-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS runtime
 WORKDIR /app
 
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+  SKIP_MIGRATIONS=true
 # Mastra (AI agents) ships anonymous usage telemetry; keep it off
 ENV MASTRA_TELEMETRY_DISABLED=1
 
 RUN apk add --no-cache wget openssl libc6-compat su-exec \
   && corepack enable && corepack prepare pnpm@9.15.9 --activate \
-  && npm install -g prisma@6.19.3 \
-  && npm cache clean --force \
   && addgroup -g 1001 -S openathlete \
   && adduser -S openathlete -u 1001 -G openathlete
 
@@ -67,8 +79,6 @@ COPY --from=build /app/libs/shared/dist ./libs/shared/dist
 COPY --from=build /app/libs/shared/package.json ./libs/shared/package.json
 COPY --from=build /app/libs/database/generated ./libs/database/generated
 COPY --from=build /app/libs/database/package.json ./libs/database/package.json
-COPY --from=build /app/libs/database/prisma ./libs/database/prisma
-COPY --from=build /app/libs/database/prisma.config.js ./libs/database/prisma.config.js
 
 # Files stay owned by root and read-only for the app user, which writes
 # nothing under /app. (A `chown -R /app` copied every file into a new layer,

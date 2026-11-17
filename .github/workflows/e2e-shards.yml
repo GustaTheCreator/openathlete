@@ -1,0 +1,205 @@
+name: Balanced production image tests
+
+on:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+  packages: read
+
+jobs:
+  plan:
+    name: Discover and balance E2E tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@f53f5227a9e83886ab598c617f3c170fab62f0d3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @openathlete/e2e...
+      - name: Discover tests without installing browsers
+        run: pnpm --filter @openathlete/e2e exec playwright test --list --reporter=json > "$RUNNER_TEMP/discovery.json"
+      - name: Plan two balanced shards
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ -n "$BASE_SHA" && -n "$HEAD_SHA" ]]; then
+            python scripts/e2e_plan.py --base "$BASE_SHA" --head "$HEAD_SHA" --output "$RUNNER_TEMP/changed.txt"
+          fi
+          python scripts/e2e_shards.py plan --discovery "$RUNNER_TEMP/discovery.json" \
+            --timings .github/ci/e2e-durations.json --changed "$RUNNER_TEMP/changed.txt" \
+            --output-dir "$RUNNER_TEMP/e2e-plan"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: e2e-plan
+          path: ${{ runner.temp }}/e2e-plan
+          retention-days: 1
+          if-no-files-found: error
+
+  shard:
+    name: E2E shard ${{ matrix.shard }}
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: e2e-plan
+          path: ${{ runner.temp }}/e2e-plan
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: e2e-images
+          path: ${{ runner.temp }}/images
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: ${{ !inputs.publish }}
+        with:
+          name: e2e-image-api
+          path: ${{ runner.temp }}/images
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: ${{ !inputs.publish }}
+        with:
+          name: e2e-image-web
+          path: ${{ runner.temp }}/images
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        if: ${{ !inputs.publish }}
+        with:
+          name: e2e-image-migrator
+          path: ${{ runner.temp }}/images
+      - uses: pnpm/action-setup@f53f5227a9e83886ab598c617f3c170fab62f0d3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @openathlete/e2e...
+      - name: Load or pull candidate images
+        env:
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          if [[ "$PUBLISH" == "true" ]]; then
+            python scripts/components.py env --input "$RUNNER_TEMP/images/candidate.json" --output "$GITHUB_ENV"
+            source "$GITHUB_ENV"
+            docker pull "$API_IMAGE"
+            docker pull "$WEB_IMAGE"
+            docker pull "$MIGRATOR_IMAGE"
+          else
+            docker load --input "$RUNNER_TEMP/images/openathlete-api.tar"
+            docker load --input "$RUNNER_TEMP/images/openathlete-web.tar"
+            docker load --input "$RUNNER_TEMP/images/openathlete-migrator.tar"
+            python scripts/components.py env --input "$RUNNER_TEMP/images/candidate.json" --output "$GITHUB_ENV"
+          fi
+          python scripts/components.py verify --input "$RUNNER_TEMP/images/candidate.json"
+      - run: pnpm --filter @openathlete/e2e exec playwright install --with-deps chromium
+      - name: Start isolated stack
+        run: docker compose -f e2e/docker-compose.yml up -d --no-build --wait
+      - name: Run changed tests, then remaining tests
+        env:
+          SHARD: ${{ matrix.shard }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          run_list() {
+            local part="$1"
+            local list="$RUNNER_TEMP/e2e-plan/shard${SHARD}-${part}.txt"
+            local label="shard${SHARD}-${part}"
+            if [[ ! -s "$list" ]]; then
+              printf '{"suites":[],"stats":{"expected":0,"skipped":0,"unexpected":0,"flaky":0,"duration":0}}\n' > "e2e/playwright-${label}-results.json"
+              return
+            fi
+            PLAYWRIGHT_HTML_REPORT="playwright-${label}-report" E2E_JSON_REPORT="playwright-${label}-results.json" \
+              pnpm e2e test:e2e --test-list "$list" --max-failures=1
+          }
+          if [[ "$PUBLISH" == "true" ]]; then
+            PLAYWRIGHT_HTML_REPORT="playwright-shard${SHARD}-all-report" E2E_JSON_REPORT="playwright-shard${SHARD}-all-results.json" \
+              pnpm e2e test:e2e --test-list "$RUNNER_TEMP/e2e-plan/shard${SHARD}-all.txt" --max-failures=1
+          else
+            run_list first
+            run_list rest
+          fi
+      - name: Preserve sanitized service logs
+        if: ${{ !cancelled() }}
+        run: docker compose -f e2e/docker-compose.yml logs --no-color --timestamps api worker web migrator | python scripts/sanitize_ci_logs.py > e2e/service-logs.txt
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-shard-${{ matrix.shard }}
+          path: |
+            e2e/playwright-*-report
+            e2e/playwright-*-results.json
+            e2e/test-results
+            e2e/service-logs.txt
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Stop isolated stack
+        if: always()
+        run: docker compose -f e2e/docker-compose.yml down -v
+
+  verify:
+    name: Verify complete E2E coverage
+    needs: [plan, shard]
+    if: ${{ always() && needs.plan.result == 'success' && needs.shard.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: e2e-plan
+          path: ${{ runner.temp }}/e2e-plan
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: e2e-images
+          path: ${{ runner.temp }}/images
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: e2e-shard-*
+          path: ${{ runner.temp }}/e2e-reports
+          merge-multiple: true
+      - name: Verify every discovered test ran exactly once
+        env:
+          PUBLISH: ${{ inputs.publish }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$PUBLISH" == "true" ]]; then
+            reports=("$RUNNER_TEMP"/e2e-reports/playwright-shard1-all-results.json "$RUNNER_TEMP"/e2e-reports/playwright-shard2-all-results.json)
+          else
+            reports=("$RUNNER_TEMP"/e2e-reports/playwright-shard1-first-results.json "$RUNNER_TEMP"/e2e-reports/playwright-shard1-rest-results.json "$RUNNER_TEMP"/e2e-reports/playwright-shard2-first-results.json "$RUNNER_TEMP"/e2e-reports/playwright-shard2-rest-results.json)
+          fi
+          args=()
+          for report in "${reports[@]}"; do args+=(--report "$report"); done
+          candidate_args=()
+          if [[ "$PUBLISH" != "true" ]]; then candidate_args+=(--allow-local-candidate); fi
+          python scripts/e2e_shards.py verify --expected "$RUNNER_TEMP/e2e-plan/expected.json" \
+            "${args[@]}" --output "$RUNNER_TEMP/coverage.json"
+          if ! gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" \
+              > "$RUNNER_TEMP/workflow-jobs.json"; then
+            echo '{"jobs":[]}' > "$RUNNER_TEMP/workflow-jobs.json"
+          fi
+          python scripts/ci_report.py --revision "$GITHUB_SHA" --version "$(cat VERSION)" \
+            --candidate "$RUNNER_TEMP/images/candidate.json" "${candidate_args[@]}" \
+            --coverage "$RUNNER_TEMP/coverage.json" \
+            --jobs "$RUNNER_TEMP/workflow-jobs.json" "${args[@]}" \
+            --output "$RUNNER_TEMP/verification-receipt.json" --summary "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: e2e-verification
+          path: |
+            ${{ runner.temp }}/coverage.json
+            ${{ runner.temp }}/verification-receipt.json
+            ${{ runner.temp }}/e2e-plan/expected.json
+            ${{ runner.temp }}/images/candidate.json
+          retention-days: 30
+          if-no-files-found: error

@@ -29,8 +29,7 @@ RUN pnpm build
 # image works for any deployment.
 ARG VITE_API_BASE_URL="__OPENATHLETE_API_BASE_URL__"
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-ARG VITE_SOURCE_CODE_URL="https://github.com/GustaTheCreator/openathlete/tree/tourmalet-2026.11.16.1"
-ENV VITE_SOURCE_CODE_URL=$VITE_SOURCE_CODE_URL
+ENV VITE_SOURCE_CODE_URL=__OPENATHLETE_SOURCE_CODE_URL__
 
 WORKDIR /app/apps/web
 COPY apps/web/ ./
@@ -38,6 +37,7 @@ RUN pnpm build
 
 # ---- Runtime stage ----
 FROM nginx:alpine@sha256:fed7e14be83cbd2661a75cdc5b872d936cf155d46c327084d30b8df19ae88d72 AS runtime
+ARG SOURCE_CODE_URL=__OPENATHLETE_SOURCE_CODE_URL__
 
 # Copy built assets
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
@@ -47,6 +47,10 @@ COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 
 # Run by the nginx image entrypoint before nginx starts
 COPY --chmod=755 apps/web/docker/40-api-public-url.sh /docker-entrypoint.d/40-api-public-url.sh
+COPY --chmod=755 apps/web/docker/50-source-code-url.sh /docker-entrypoint.d/50-source-code-url.sh
+
+# Set by the deployment at runtime; the entrypoint updates only index.html.
+ENV SOURCE_CODE_URL=$SOURCE_CODE_URL
 
 EXPOSE 80
 

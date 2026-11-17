@@ -12,7 +12,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from release import validate_candidate
+from release import image_digest, image_refs, names, validate_candidate
 
 REPOSITORY = "GustaTheCreator/openathlete"
 STABLE_BRANCH = "tourmalet"
@@ -74,11 +74,15 @@ def select_stable_run(runs: list[dict], revision: str) -> dict | None:
 
 
 def validate_manifest(manifest: dict, *, version: str, tag: str, revision: str,
-                      api_digest: str, web_digest: str) -> None:
+                      api_digest: str | None = None, web_digest: str | None = None, candidate: dict | None = None) -> None:
     if (manifest.get("version") != version or manifest.get("tag") != tag
             or manifest.get("revision") != revision):
         raise DeliveryError("Published manifest does not match the tested release identity")
     images = manifest.get("images", {})
+    if candidate is not None:
+        if images != image_refs(candidate) or manifest.get("components") != candidate.get("components"):
+            raise DeliveryError("Published component identities differ from the tested candidate")
+        api_digest, web_digest = image_digest(candidate, "api"), image_digest(candidate, "web")
     if not images.get("api", "").endswith("@" + api_digest):
         raise DeliveryError("Published API digest does not match the tested candidate")
     if not images.get("web", "").endswith("@" + web_digest):
@@ -188,7 +192,7 @@ class Delivery:
         stable_run = self.wait("successful stable push CI", lambda: self._stable_run(merge))
         self.receipt["stableCi"] = {"runId": stable_run["databaseId"], "url": stable_run.get("url")}
         candidate = self._candidate(stable_run, merge, version)
-        self.receipt["images"] = {key: candidate[key] for key in ("api", "web")}
+        self.receipt["images"] = {key: image_digest(candidate, key) for key in names(candidate)}
         self.record("stable CI candidate", "validated", runId=stable_run["databaseId"])
 
         tag = f"tourmalet-v{version}"
@@ -295,8 +299,7 @@ class Delivery:
             if not path.is_file():
                 raise DeliveryError("Published release manifest is missing")
             manifest = json.loads(path.read_text(encoding="utf-8"))
-        validate_manifest(manifest, version=version, tag=tag, revision=revision,
-                          api_digest=candidate["api"], web_digest=candidate["web"])
+        validate_manifest(manifest, version=version, tag=tag, revision=revision, candidate=candidate)
         self.receipt["release"]["url"] = view.get("url")
         return manifest
 
@@ -308,8 +311,7 @@ class Delivery:
     def _deploy(self, tag, version, revision, candidate):
         status_output = self._remote("status")
         status = parse_server_status(status_output)
-        expected = {key: "ghcr.io/gustathecreator/openathlete-" + key + "@" + candidate[key]
-                    for key in ("api", "web")}
+        expected = image_refs(candidate)
         if status["version"] != version or status["revision"] != revision or status["images"] != expected:
             self._remote("check")
             self._remote("deploy")
@@ -317,7 +319,7 @@ class Delivery:
         if status["version"] != version or status["revision"] != revision or status["images"] != expected:
             raise DeliveryError("Server receipt does not match the released commit and tested images")
         self.receipt["deployment"] = {"status": "verified", "version": version, "revision": revision,
-                                       "images": candidate}
+                                       "images": expected}
         self.record("deployment", "verified", version=version, revision=revision)
 
 

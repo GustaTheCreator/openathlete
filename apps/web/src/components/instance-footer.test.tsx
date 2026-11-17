@@ -20,7 +20,51 @@ describe('Instance footer', () => {
   afterEach(async () => {
     if (root) await act(async () => root.unmount());
     container?.remove();
+    document
+      .querySelector('meta[name="openathlete-source-code-url"]')
+      ?.remove();
     vi.unstubAllEnvs();
+  });
+
+  function setSourceMeta(content: string) {
+    const meta = document.createElement('meta');
+    meta.name = 'openathlete-source-code-url';
+    meta.content = content;
+    document.head.append(meta);
+  }
+
+  async function renderFooter() {
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root.render(<InstanceFooter />));
+    return container.querySelector('a:last-child')?.getAttribute('href');
+  }
+
+  it('prefers the runtime metadata URL over the build-time value', async () => {
+    vi.stubEnv(
+      'VITE_SOURCE_CODE_URL',
+      'https://github.com/GustaTheCreator/openathlete/tree/old',
+    );
+    setSourceMeta(
+      'https://github.com/GustaTheCreator/openathlete/tree/tourmalet-v1.7.3',
+    );
+
+    await expect(renderFooter()).resolves.toBe(
+      'https://github.com/GustaTheCreator/openathlete/tree/tourmalet-v1.7.3',
+    );
+  });
+
+  it('falls back to the build-time value when the runtime placeholder is unresolved', async () => {
+    vi.stubEnv(
+      'VITE_SOURCE_CODE_URL',
+      'https://github.com/GustaTheCreator/openathlete/tree/native-build',
+    );
+    setSourceMeta('__OPENATHLETE_SOURCE_CODE_URL__');
+
+    await expect(renderFooter()).resolves.toBe(
+      'https://github.com/GustaTheCreator/openathlete/tree/native-build',
+    );
   });
 
   it('links to the configured source revision', async () => {
@@ -28,27 +72,26 @@ describe('Instance footer', () => {
       'VITE_SOURCE_CODE_URL',
       'https://github.com/GustaTheCreator/openathlete/tree/tourmalet-v1.6.1',
     );
-    container = document.createElement('div');
-    document.body.append(container);
-    root = createRoot(container);
-
-    await act(async () => root.render(<InstanceFooter />));
-
-    expect(container.querySelector('a:last-child')?.getAttribute('href')).toBe(
+    await expect(renderFooter()).resolves.toBe(
       'https://github.com/GustaTheCreator/openathlete/tree/tourmalet-v1.6.1',
+    );
+  });
+
+  it('uses the build-time source URL for native or Vercel builds without runtime metadata', async () => {
+    vi.stubEnv(
+      'VITE_SOURCE_CODE_URL',
+      'https://github.com/GustaTheCreator/openathlete/tree/native-build',
+    );
+
+    await expect(renderFooter()).resolves.toBe(
+      'https://github.com/GustaTheCreator/openathlete/tree/native-build',
     );
   });
 
   it('keeps the current source link when no release URL is configured', async () => {
     vi.stubEnv('VITE_SOURCE_CODE_URL', '');
-    container = document.createElement('div');
-    document.body.append(container);
-    root = createRoot(container);
-
-    await act(async () => root.render(<InstanceFooter />));
-
-    expect(container.querySelector('a:last-child')?.getAttribute('href')).toBe(
-      'https://github.com/GustaTheCreator/openathlete/tree/tourmalet-2026.11.16.1',
+    await expect(renderFooter()).resolves.toBe(
+      'https://github.com/GustaTheCreator/openathlete/tree/tourmalet',
     );
   });
 });

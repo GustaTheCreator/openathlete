@@ -31,6 +31,9 @@ fi
 if [ "${SKIP_MIGRATIONS:-false}" = "true" ]; then
   log "Skipping database migrations (SKIP_MIGRATIONS=true)"
 else
+  if ! command -v prisma >/dev/null 2>&1; then
+    die "Prisma CLI is not installed; run the matching OpenAthlete migrator image before starting this API image, or set SKIP_MIGRATIONS=true"
+  fi
   log "Running prisma migrate deploy..."
   cd /app/libs/database
   if ! prisma migrate deploy; then

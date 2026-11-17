@@ -1,16 +1,38 @@
 services:
+  migrator:
+    image: openathlete-migrator:tourmalet-2026.11.16.1
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migrator
+    environment:
+      DATABASE_URL: postgresql://openathlete:${POSTGRES_PASSWORD:-openathlete_dev_password}@postgres:5432/openathlete
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - openathlete-network
+
   api:
     image: openathlete-api:tourmalet-2026.11.16.1
     pull_policy: never
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+    environment:
+      SKIP_MIGRATIONS: 'true'
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
   web:
     image: openathlete-web:tourmalet-2026.11.16.1
     pull_policy: never
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+    environment:
+      SOURCE_CODE_URL: "${SOURCE_CODE_URL:-https://github.com/GustaTheCreator/openathlete/tree/tourmalet}"
     volumes:
       - type: bind
         source: ./public-privacy

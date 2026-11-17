@@ -59,6 +59,13 @@ async function createUser(
     headers: apiHeaders(ip),
     data: { email, password, firstName, lastName },
   });
+  if (signup.status() !== 201) {
+    const errorId = signup.headers()['x-openathlete-error-id'];
+    console.error('POST /user fixture failed', {
+      status: signup.status(),
+      errorId,
+    });
+  }
   expect(signup.status(), await signup.text()).toBe(201);
   const { userId } = (await signup.json()) as { userId: number };
 

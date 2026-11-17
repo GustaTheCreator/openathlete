@@ -22,6 +22,8 @@ jobs:
       version: ${{ steps.version.outputs.value }}
       api-digest: ${{ steps.candidate.outputs.api-digest }}
       web-digest: ${{ steps.candidate.outputs.web-digest }}
+      migrator-digest: ${{ steps.candidate.outputs.migrator-digest }}
+      ci-run: ${{ steps.ci.outputs.run-id }}
       rehearsal-needed: ${{ steps.rehearsal.outputs.rehearsal-needed }}
       base-api-image: ${{ steps.rehearsal.outputs.base-api-image }}
     steps:
@@ -33,6 +35,7 @@ jobs:
       - name: Validate tag and release ancestry
         run: python scripts/release.py check --tag "$GITHUB_REF_NAME" --revision "$GITHUB_SHA" --main-ref origin/tourmalet
       - name: Require successful CI for this exact stable commit
+        id: ci
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -53,6 +56,7 @@ jobs:
             exit 1
           fi
           gh run download "$run_id" --repo "$REPOSITORY" --name tourmalet-candidate --dir "$RUNNER_TEMP/candidate"
+          echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
       - id: candidate
         name: Validate tested candidate identity
         run: python scripts/release.py candidate --input "$RUNNER_TEMP/candidate/candidate.json" --revision "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
@@ -85,6 +89,7 @@ jobs:
       REVISION: ${{ github.sha }}
       API_DIGEST: ${{ needs.validate.outputs.api-digest }}
       WEB_DIGEST: ${{ needs.validate.outputs.web-digest }}
+      MIGRATOR_DIGEST: ${{ needs.validate.outputs.migrator-digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout@v7
 
@@ -98,11 +103,14 @@ jobs:
 
       - name: Tag exact tested digests
         run: |
-          for component in api web; do
+          for component in api web migrator; do
             image="$REGISTRY/openathlete-$component"
+            prefix=""
+            if [[ "$component" == migrator ]]; then image="$REGISTRY/openathlete-api"; prefix="migrator-"; fi
             digest="$API_DIGEST"
             if [[ "$component" == web ]]; then digest="$WEB_DIGEST"; fi
-            for tag in "$VERSION" "sha-$REVISION"; do
+            if [[ "$component" == migrator ]]; then digest="$MIGRATOR_DIGEST"; fi
+            for tag in "${prefix}$VERSION" "${prefix}sha-$REVISION"; do
               if existing=$(docker buildx imagetools inspect "$image:$tag" --format '{{.Manifest.Digest}}' 2>"$RUNNER_TEMP/inspect-error"); then
                 if [[ "$existing" != "$digest" ]]; then
                   echo "Refusing to replace existing $component:$tag" >&2
@@ -132,6 +140,8 @@ jobs:
     env:
       API_IMAGE: ghcr.io/gustathecreator/openathlete-api@${{ needs.validate.outputs.api-digest }}
       WEB_IMAGE: ghcr.io/gustathecreator/openathlete-web@${{ needs.validate.outputs.web-digest }}
+      MIGRATOR_IMAGE: ghcr.io/gustathecreator/openathlete-api@${{ needs.validate.outputs.migrator-digest }}
+      SOURCE_CODE_URL: https://github.com/GustaTheCreator/openathlete/tree/${{ github.ref_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout@v7
         with:
@@ -142,6 +152,18 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download candidate and full-coverage receipt from validated CI run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN: ${{ needs.validate.outputs.ci-run }}
+        run: |
+          gh run download "$CI_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name tourmalet-candidate --dir "$RUNNER_TEMP/candidate"
+          gh run download "$CI_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name e2e-verification --dir "$RUNNER_TEMP/ci-verification"
+          python scripts/release.py candidate --input "$RUNNER_TEMP/candidate/candidate.json" \
+            --revision "$GITHUB_SHA" > /dev/null
 
       - uses: pnpm/action-setup@f53f5227a9e83886ab598c617f3c170fab62f0d3 # pnpm/action-setup@v6
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # actions/setup-node@v7
@@ -154,7 +176,7 @@ jobs:
         if: needs.validate.outputs.rehearsal-needed == 'true'
         env:
           BASE_API_IMAGE: ${{ needs.validate.outputs.base-api-image }}
-        run: python deploy/rehearse.py --base-api-image "$BASE_API_IMAGE" --candidate-api-image "$API_IMAGE" --json-output e2e/migration-rehearsal.json
+        run: python deploy/rehearse.py --base-image "$BASE_API_IMAGE" --candidate-image "$MIGRATOR_IMAGE" --json-output e2e/migration-rehearsal.json
       - name: Start the release image stack
         run: docker compose -f e2e/docker-compose.yml up -d --no-build --wait
       - name: Smoke test health, login and source identity
@@ -165,18 +187,18 @@ jobs:
       - name: Preserve release diagnostics even after a successful retry
         if: ${{ !cancelled() }}
         run: |
-          docker compose -f e2e/docker-compose.yml logs --no-color --timestamps api worker web | python scripts/sanitize_ci_logs.py > e2e/service-logs.txt
+          docker compose -f e2e/docker-compose.yml logs --no-color --timestamps api worker web migrator | python scripts/sanitize_ci_logs.py > e2e/service-logs.txt
 
       - name: Record release identity, test counts and phase timings
         if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
-          API_DIGEST: ${{ needs.validate.outputs.api-digest }}
-          WEB_DIGEST: ${{ needs.validate.outputs.web-digest }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" > e2e/workflow-jobs.json || echo '{"jobs":[]}' > e2e/workflow-jobs.json
           python scripts/ci_report.py --revision "$GITHUB_SHA" --version "$(cat VERSION)" \
-            --api-digest "$API_DIGEST" --web-digest "$WEB_DIGEST" --jobs e2e/workflow-jobs.json \
+            --candidate "$RUNNER_TEMP/candidate/candidate.json" \
+            --coverage "$RUNNER_TEMP/ci-verification/coverage.json" --jobs e2e/workflow-jobs.json \
+            --previous-receipt "$RUNNER_TEMP/ci-verification/verification-receipt.json" \
             --report e2e/playwright-results.json --output e2e/verification-receipt.json --summary "$GITHUB_STEP_SUMMARY"
 
       - name: Upload release Playwright report and traces
@@ -202,6 +224,7 @@ jobs:
     needs: [validate, promote, smoke]
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout@v7
@@ -228,13 +251,15 @@ jobs:
           API_DIGEST: ${{ needs.validate.outputs.api-digest }}
           WEB_DIGEST: ${{ needs.validate.outputs.web-digest }}
           SOURCE_SHA256: ${{ steps.source.outputs.sha256 }}
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN: ${{ needs.validate.outputs.ci-run }}
         run: |
+          gh run download "$CI_RUN" --name tourmalet-candidate --dir "$RUNNER_TEMP/candidate"
           python scripts/release.py manifest \
             --tag "$TAG" \
             --revision "$REVISION" \
             --migration-tree "$(git rev-parse "$REVISION:libs/database/prisma/schema/migrations")" \
-            --api-digest "${API_DIGEST#sha256:}" \
-            --web-digest "${WEB_DIGEST#sha256:}" \
+            --candidate "$RUNNER_TEMP/candidate/candidate.json" \
             --source-sha256 "$SOURCE_SHA256" \
             --output "$RUNNER_TEMP/release-assets/tourmalet-release.json"
 
