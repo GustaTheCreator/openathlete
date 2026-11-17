@@ -193,13 +193,12 @@ jobs:
             --coverage "$RUNNER_TEMP/coverage.json" \
             --jobs "$RUNNER_TEMP/workflow-jobs.json" "${args[@]}" \
             --output "$RUNNER_TEMP/verification-receipt.json" --summary "$GITHUB_STEP_SUMMARY"
+          mkdir "$RUNNER_TEMP/verification"
+          cp "$RUNNER_TEMP/coverage.json" "$RUNNER_TEMP/verification-receipt.json" \
+            "$RUNNER_TEMP/e2e-plan/expected.json" "$RUNNER_TEMP/images/candidate.json" "$RUNNER_TEMP/verification/"
       - uses: actions/upload-artifact@v7
         with:
           name: e2e-verification
-          path: |
-            ${{ runner.temp }}/coverage.json
-            ${{ runner.temp }}/verification-receipt.json
-            ${{ runner.temp }}/e2e-plan/expected.json
-            ${{ runner.temp }}/images/candidate.json
+          path: ${{ runner.temp }}/verification
           retention-days: 30
           if-no-files-found: error
