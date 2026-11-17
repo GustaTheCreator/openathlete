@@ -64,6 +64,7 @@ test('new sessions offer the six team sports and save cycling by default', async
   });
   await form.locator('[data-session-name]').fill('Cycling choice');
   await form.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(form).toBeHidden();
   await expect(
     page.locator('.calendar-event', { hasText: 'Cycling choice' }),
   ).toBeVisible();
@@ -98,6 +99,7 @@ test('manual activities use the same six sports and start with cycling', async (
   await page.getByRole('option', { name: 'Mobility', exact: true }).click();
   await form.getByLabel('Event Name').fill('Mobility choice');
   await form.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(form).toBeHidden();
   await expect(
     page.locator('.calendar-event', { hasText: 'Mobility choice' }),
   ).toBeVisible();
