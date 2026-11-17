@@ -17,3 +17,5 @@
 2026-11-17 — Restrict timezone reduction to inert web assets — all application logic, mixed, shared/database and unknown changes retain UTC/New York/Tokyo; styles/images/fonts alone have no date-bucketing behavior.
 
 2026-11-17 — Keep CI heavy jobs parallel and server polling unchanged until further measurement — a universal static-check barrier adds 60–78 seconds to green runs, and polling was not the bottleneck; optimize the measured E2E work before adding shards, component provenance or a separate migrator.
+
+2026-11-17 — Prioritize changed E2E specs and run the inverse selection afterward — preserves the complete regression while avoiding duplicate execution of expensive changed tests; discovery verified all 216 test identities are covered exactly once (22 prioritized, 194 remaining).

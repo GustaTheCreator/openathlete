@@ -8,7 +8,7 @@ Tourmalet 1.7.3 continues the workflow audit with granular Docker source layers,
 
 The responsive statistics benchmark kept all 90 per-run width assertions across two devices and reduced mean wall time from 53.5 to 18.7 seconds (two runs per version in reverse order, same 1.7.2 images). Four read-only locale tests now share one test-owned fixture and retain all route assertions. The full pipeline gain and delivery state must be verified from the current CI and server receipts, not inferred from these local measurements.
 
-Follow-up verification: the complete `scripts/verify.sh --e2e` passed with a fresh local Docker stack, including lint/types/units and the production-image regression, then removed its services. All 28 script tests, 31 deployment tests, actionlint and Bash syntax checks passed. Independent reviews are clear after correcting live deployment verification. Two disposable migration/recovery rehearsals passed with the existing 139-migration tree; no changed-schema or production-data compatibility is claimed.
+Follow-up verification: the complete `scripts/verify.sh --e2e` passed with a fresh local Docker stack, including lint/types/units and the production-image regression, then removed its services. All 30 script tests, 31 deployment tests, actionlint and Bash syntax checks passed. Independent reviews are clear after correcting live deployment verification. Two disposable migration/recovery rehearsals passed with the existing 139-migration tree; no changed-schema or production-data compatibility is claimed. Playwright discovery confirms the prioritized and inverse lists partition all 216 tests into 22 + 194, with no overlap or omissions; PRs no longer repeat the prioritized tests.
 
 ## Current delivery
 

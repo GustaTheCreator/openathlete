@@ -91,11 +91,17 @@ jobs:
           PLAYWRIGHT_HTML_REPORT: playwright-changed-report
           E2E_JSON_REPORT: playwright-changed-results.json
         run: |
-          mapfile -d '' specs < <(git diff --name-only --diff-filter=AM --no-renames -z "$BASE_SHA...$HEAD_SHA" -- 'e2e/tests/*.spec.ts')
-          if (( ${#specs[@]} )); then
-            pnpm e2e test:e2e "${specs[@]#e2e/}" --max-failures=1
+          python scripts/e2e_plan.py --base "$BASE_SHA" --head "$HEAD_SHA" --output "$RUNNER_TEMP/changed-e2e.txt"
+          if [[ -s "$RUNNER_TEMP/changed-e2e.txt" ]]; then
+            pnpm e2e test:e2e --test-list "$RUNNER_TEMP/changed-e2e.txt" --max-failures=1
           fi
-      - run: pnpm e2e test:e2e
+      - name: Test every remaining spec
+        run: |
+          if [[ -s "$RUNNER_TEMP/changed-e2e.txt" ]]; then
+            pnpm e2e test:e2e --test-list-invert "$RUNNER_TEMP/changed-e2e.txt" --pass-with-no-tests
+          else
+            pnpm e2e test:e2e
+          fi
       - name: Record tested candidate
         if: env.CANDIDATE == 'true'
         env:
