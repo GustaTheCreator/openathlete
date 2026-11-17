@@ -1,7 +1,8 @@
-import { EVENT_TYPE, Event, SPORT_TYPE } from '@openathlete/shared';
+import { EVENT_TYPE, Event } from '@openathlete/shared';
 import type { CreateEventDto } from '@openathlete/shared';
 
 import { type EventFormInput, NO_EQUIPMENT } from './event-form-schemas';
+import { DEFAULT_SPORT } from './sport-selection';
 
 type CreateProps = {
   date?: Date;
@@ -129,7 +130,7 @@ export function getFormDefaultValues(
       description: '',
       startDate,
       endDate: calculatedEndDate,
-      sport: SPORT_TYPE.RUNNING,
+      sport: DEFAULT_SPORT,
       saveAsTemplate: false,
       // A logged activity shows the hour its end implies
       ...(props.type === EVENT_TYPE.ACTIVITY && {

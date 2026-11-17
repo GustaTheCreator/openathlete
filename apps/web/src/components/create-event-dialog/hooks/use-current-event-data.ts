@@ -10,9 +10,10 @@ import type {
   competitionEventSchema,
   trainingEventSchema,
 } from '@openathlete/shared';
-import { EVENT_TYPE, SPORT_TYPE } from '@openathlete/shared';
+import { EVENT_TYPE } from '@openathlete/shared';
 
 import type { EventFormInput } from '../utils/event-form-schemas';
+import { DEFAULT_SPORT } from '../utils/sport-selection';
 
 type CreateProps = {
   date?: Date;
@@ -52,7 +53,7 @@ export function useCurrentEventData(
         athleteId,
         sport:
           (formValues as z.infer<typeof trainingEventSchema>).sport ||
-          SPORT_TYPE.RUNNING,
+          DEFAULT_SPORT,
         goalDistance:
           (formValues as z.infer<typeof trainingEventSchema>).goalDistance ??
           null,
@@ -80,7 +81,7 @@ export function useCurrentEventData(
         athleteId,
         sport:
           (formValues as z.infer<typeof competitionEventSchema>).sport ||
-          SPORT_TYPE.RUNNING,
+          DEFAULT_SPORT,
         goalDistance:
           (formValues as z.infer<typeof competitionEventSchema>).goalDistance ??
           null,
@@ -106,7 +107,7 @@ export function useCurrentEventData(
         athleteId,
         sport:
           (formValues as z.infer<typeof activityEventSchema>).sport ||
-          SPORT_TYPE.RUNNING,
+          DEFAULT_SPORT,
         rpe: (formValues as z.infer<typeof activityEventSchema>).rpe ?? null,
       } as CreateEventDto;
     }

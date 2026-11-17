@@ -6,6 +6,8 @@ Self-hosted fork based on upstream v1.6.0, with bidirectional Wahoo synchronizat
 
 The default and stable branch is **`tourmalet`**. Production installs a versioned release from that branch, pinned to image digests; it does not follow every commit. `main` retains upstream development and is separate from the deployed fork. Development branches use `codex/*` and target `tourmalet` in pull requests.
 
+Training forms default to cycling and offer cycling, running, strength training, walking, swimming and mobility. Existing events and imported activities in other sports remain supported.
+
 Shared agent instructions live in [AGENTS.md](AGENTS.md), with scoped instructions in each application and reusable workflows in `.agents/skills/`. Community policies are in `.github/`; fork guides are indexed in `.github/docs/`.
 
 The upstream project documentation follows below. Deployment credentials, athlete data and personal operational notes are not included.
