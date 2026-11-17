@@ -365,8 +365,12 @@ test('a super-admin grants a fixture account coach access without granting admin
     }),
   ).toBeVisible();
   await page.getByLabel('Search users').fill(target.email);
-  const userRow = page
-    .getByText(target.email, { exact: true })
+  const adminUsers = page.getByRole('region', {
+    name: 'Administration',
+    exact: true,
+  });
+  const userRow = adminUsers
+    .getByText(target.email, { exact: false })
     .locator('xpath=../..');
   await expect(userRow).toBeVisible();
   await userRow.getByRole('checkbox', { name: 'COACH' }).check();
