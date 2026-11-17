@@ -12,7 +12,17 @@ export default defineConfig({
   retries: isCI ? 1 : 0,
   workers: isCI ? 2 : undefined,
   reporter: isCI
-    ? [['github'], ['html', { open: 'never' }]]
+    ? [
+        ['github'],
+        ['html', { open: 'never' }],
+        [
+          'json',
+          {
+            outputFile:
+              process.env.E2E_JSON_REPORT ?? 'playwright-results.json',
+          },
+        ],
+      ]
     : [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: WEB_URL,

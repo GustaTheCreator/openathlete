@@ -15,6 +15,18 @@ SEMVER = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
+def validate_candidate(candidate: dict, version: str, revision: str) -> dict:
+    """Only accept the tested stable run's exact version, revision and digests."""
+    if not SEMVER.fullmatch(version) or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise ValueError("Invalid candidate identity")
+    if candidate.get("version") != version or candidate.get("revision") != revision:
+        raise ValueError("Candidate does not match the release version and revision")
+    for component in ("api", "web"):
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", candidate.get(component, "")):
+            raise ValueError("Invalid candidate image digest")
+    return candidate
+
+
 def validate_release(
     version: str, tag: str, revision: str, main_ref: str = "origin/tourmalet"
 ) -> None:
@@ -123,6 +135,11 @@ def main() -> None:
     )
     check.add_argument("--version-file", type=Path, default=Path("VERSION"))
 
+    candidate = commands.add_parser("candidate", help="Validate tested CI image metadata")
+    candidate.add_argument("--input", type=Path, required=True)
+    candidate.add_argument("--revision", required=True)
+    candidate.add_argument("--version-file", type=Path, default=Path("VERSION"))
+
     source = commands.add_parser("source", help="Create the source archive and checksum")
     source.add_argument("--tag", required=True)
     source.add_argument("--revision", required=True)
@@ -142,6 +159,13 @@ def main() -> None:
     if args.command == "check":
         version = args.version_file.read_text(encoding="utf-8").strip()
         validate_release(version, args.tag, args.revision, args.main_ref)
+    elif args.command == "candidate":
+        candidate = validate_candidate(
+            json.loads(args.input.read_text(encoding="utf-8")),
+            args.version_file.read_text(encoding="utf-8").strip(), args.revision,
+        )
+        for component in ("api", "web"):
+            print(f"{component}-digest={candidate[component]}")
     elif args.command == "source":
         archive, digest = create_source_archive(args.tag, args.revision, args.output_dir)
         print(f"{archive}\n{digest}")

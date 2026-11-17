@@ -1,0 +1,140 @@
+name: Production image tests
+
+on:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+
+jobs:
+  test:
+    # The production images (same Dockerfiles as releases) with PostgreSQL,
+    # Redis and the worker, tested through the API and a real browser
+    name: End-to-end tests
+    runs-on: ubuntu-latest
+    env:
+      CANDIDATE: ${{ inputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - id: version
+        run: echo "value=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        if: env.CANDIDATE == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+
+      - id: api
+        name: Build API image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64
+          load: ${{ env.CANDIDATE != 'true' }}
+          push: ${{ env.CANDIDATE == 'true' }}
+          tags: ${{ env.CANDIDATE == 'true' && format('ghcr.io/gustathecreator/openathlete-api:candidate-{0}-{1}-{2}', github.sha, github.run_id, github.run_attempt) || 'openathlete-api:e2e' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/GustaTheCreator/openathlete
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.value }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - id: web
+        name: Build web image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          build-args: |
+            VITE_SOURCE_CODE_URL=https://github.com/GustaTheCreator/openathlete/tree/tourmalet-v${{ steps.version.outputs.value }}
+          platforms: linux/amd64
+          load: ${{ env.CANDIDATE != 'true' }}
+          push: ${{ env.CANDIDATE == 'true' }}
+          tags: ${{ env.CANDIDATE == 'true' && format('ghcr.io/gustathecreator/openathlete-web:candidate-{0}-{1}-{2}', github.sha, github.run_id, github.run_attempt) || 'openathlete-web:e2e' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/GustaTheCreator/openathlete
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.value }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      - uses: pnpm/action-setup@f53f5227a9e83886ab598c617f3c170fab62f0d3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile --filter @openathlete/e2e...
+      - run: pnpm e2e exec playwright install --with-deps chromium
+
+      - name: Select production candidate digests
+        if: env.CANDIDATE == 'true'
+        env:
+          API_DIGEST: ${{ steps.api.outputs.digest }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+        run: |
+          echo "API_IMAGE=ghcr.io/gustathecreator/openathlete-api@$API_DIGEST" >> "$GITHUB_ENV"
+          echo "WEB_IMAGE=ghcr.io/gustathecreator/openathlete-web@$WEB_DIGEST" >> "$GITHUB_ENV"
+      - name: Start the stack
+        run: docker compose -f e2e/docker-compose.yml up -d --no-build --wait
+      - name: Test changed specs first
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PLAYWRIGHT_HTML_REPORT: playwright-changed-report
+          E2E_JSON_REPORT: playwright-changed-results.json
+        run: |
+          mapfile -d '' specs < <(git diff --name-only --diff-filter=AM --no-renames -z "$BASE_SHA...$HEAD_SHA" -- 'e2e/tests/*.spec.ts')
+          if (( ${#specs[@]} )); then
+            pnpm e2e test:e2e "${specs[@]#e2e/}" --max-failures=1
+          fi
+      - run: pnpm e2e test:e2e
+      - name: Record tested candidate
+        if: env.CANDIDATE == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+          API_DIGEST: ${{ steps.api.outputs.digest }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+        run: |
+          jq -n --arg version "$VERSION" --arg revision "$GITHUB_SHA" --arg api "$API_DIGEST" --arg web "$WEB_DIGEST" '{version: $version, revision: $revision, api: $api, web: $web}' > "$RUNNER_TEMP/candidate.json"
+      - uses: actions/upload-artifact@v7
+        if: env.CANDIDATE == 'true'
+        with:
+          name: tourmalet-candidate
+          path: ${{ runner.temp }}/candidate.json
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Preserve diagnostics even after a successful retry
+        if: ${{ !cancelled() }}
+        run: |
+          docker compose -f e2e/docker-compose.yml logs --no-color --timestamps api worker web | python scripts/sanitize_ci_logs.py > e2e/service-logs.txt
+          for report in e2e/playwright*-results.json; do
+            if [[ -f "$report" ]]; then
+              jq '{passed: .stats.expected, flaky: .stats.flaky, failed: .stats.unexpected, retries: ([.. | objects | select(has("retry")) | .retry | select(. > 0)] | length)}' "$report" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/playwright-changed-report
+            e2e/test-results
+            e2e/playwright*-results.json
+            e2e/service-logs.txt
+          retention-days: 14
+
+      - name: Stop the test stack
+        if: always()
+        run: docker compose -f e2e/docker-compose.yml down -v
