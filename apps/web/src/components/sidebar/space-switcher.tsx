@@ -1,4 +1,3 @@
-import { useGetMyCoachedAthletesQuery } from '@/api/athlete';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,13 +18,12 @@ import { m } from '@/paraglide/messages';
 import { ChevronsUpDown, Medal, Users } from 'lucide-react';
 import * as React from 'react';
 
-import { UserRole } from '@openathlete/shared';
+import { SportRole, getSportsRoles } from '@openathlete/shared';
 
 export function SpaceSwitcher() {
   const roles = useUserRoles();
   const { isMobile } = useSidebar();
   const { space, setSpace } = useSpaceContext();
-  const { data: coachedAthletes } = useGetMyCoachedAthletesQuery();
 
   const isMac = React.useMemo(
     () =>
@@ -35,38 +33,32 @@ export function SpaceSwitcher() {
   );
 
   const spaces = React.useMemo<
-    { role: UserRole; name: string; logo: React.ElementType }[]
+    { role: SportRole; name: string; logo: React.ElementType }[]
   >(
     () =>
-      roles?.map((role) => {
+      getSportsRoles(roles ?? []).map((role) => {
         switch (role) {
           case 'ATHLETE':
             return {
               role: 'ATHLETE',
-              name: m.athlete(),
+              name: m.my_training(),
               logo: Medal,
             };
           case 'COACH':
             return {
               role: 'COACH',
-              name: m.coach(),
+              name: m.my_athletes(),
               logo: Users,
             };
         }
-      }) || [],
+      }),
     [roles],
   );
 
   const activeSpace = spaces.find((s) => s.role === space);
 
-  const hasNoAthletes = coachedAthletes?.length === 0;
-
   React.useEffect(() => {
-    if (activeSpace?.role === 'COACH' && hasNoAthletes) {
-      setSpace('ATHLETE');
-    }
-
-    if (!activeSpace || spaces.length <= 1 || hasNoAthletes) {
+    if (!activeSpace || spaces.length <= 1) {
       return;
     }
 
@@ -90,8 +82,8 @@ export function SpaceSwitcher() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown, true);
     };
-  }, [spaces, setSpace, activeSpace, hasNoAthletes]);
-  if (!activeSpace || spaces.length <= 1 || hasNoAthletes) {
+  }, [spaces, setSpace, activeSpace]);
+  if (!activeSpace || spaces.length <= 1) {
     return null;
   }
   return (

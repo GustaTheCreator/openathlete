@@ -5,11 +5,14 @@ import {
   useInviteAthleteMutation,
   useRemoveAthleteMutation,
 } from '@/api/athlete';
+import { useInviteRosterMutation } from '@/api/coach';
 import { ConfirmAction } from '@/components/confirm-action';
 import { InviteAthleteDialog } from '@/components/invite-athlete-dialog/invite-athlete.dialog';
 import { ActivityAlertSettings } from '@/components/messages/activity-alert-settings';
 import { PaywallDialog } from '@/components/paywall';
+import { RosterInvitationDialog } from '@/components/roster-invitation-dialog/roster-invitation.dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -22,6 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useUserRoles } from '@/contexts/auth';
 import { useAthleteLimit } from '@/hooks/use-feature-access';
 import { m } from '@/paraglide/messages';
 import { getPath } from '@/routes/paths';
@@ -29,6 +33,8 @@ import { MoreHorizontal } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+
+import { canIssueInvitations } from '@openathlete/shared';
 
 import { SentInvitationsSection } from './sent-invitations-section';
 import {
@@ -40,16 +46,21 @@ import {
 } from './settings-section';
 
 export function AthletesTab() {
+  const canInvite = canIssueInvitations(useUserRoles() ?? []);
   const { data: athletes, isPending: isLoadingAthletes } =
     useGetMyCoachedAthletesQuery();
   const nav = useNavigate();
   const [alertsAthleteId, setAlertsAthleteId] = useState<number | null>(null);
   const { data: sentInvitations, isLoading: sentInvitationsLoading } =
-    useGetSentAthleteInvitationsQuery({ enabled: true });
+    useGetSentAthleteInvitationsQuery({ enabled: canInvite });
   const [deleteAthleteDialog, setDeleteAthleteDialog] = useState<number | null>(
     null,
   );
   const [inviteAthleteDialog, setInviteAthleteDialog] = useState(false);
+  const [selectedAthleteIds, setSelectedAthleteIds] = useState<number[]>([]);
+  const [rosterInvitationOperation, setRosterInvitationOperation] = useState<
+    'SHARE' | 'TRANSFER' | null
+  >(null);
   const [paywallOpen, setPaywallOpen] = useState(false);
 
   const { maxAthletes } = useAthleteLimit();
@@ -64,6 +75,7 @@ export function AthletesTab() {
       setInviteAthleteDialog(false);
       toast.success(m.athlete_invited_successfully());
     },
+    onError: () => toast.error(m.invitation_send_failed()),
   });
   const cancelInvitationMutation = useCancelAthleteInvitationMutation({
     onSuccess: () => {
@@ -73,6 +85,17 @@ export function AthletesTab() {
       toast.error(m.failed_to_cancel_invitation());
     },
   });
+  const inviteRosterMutation = useInviteRosterMutation({
+    onSuccess: () => {
+      setRosterInvitationOperation(null);
+      setSelectedAthleteIds([]);
+      toast.success(m.invitation_sent());
+    },
+    onError: () => toast.error(m.invitation_send_failed()),
+  });
+  const selectedAthletes = (athletes ?? []).filter((athlete) =>
+    selectedAthleteIds.includes(athlete.athleteId),
+  );
   return (
     <div className="space-y-8">
       <Dialog
@@ -93,18 +116,22 @@ export function AthletesTab() {
       </Dialog>
       <SettingsSection
         action={
-          <Button
-            size="sm"
-            onClick={() => {
-              if (canAddAthlete) {
-                setInviteAthleteDialog(true);
-              } else {
-                setPaywallOpen(true);
-              }
-            }}
-          >
-            {m.invite_athlete()}
-          </Button>
+          canInvite ? (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (canAddAthlete) {
+                    setInviteAthleteDialog(true);
+                  } else {
+                    setPaywallOpen(true);
+                  }
+                }}
+              >
+                {m.invite_athlete()}
+              </Button>
+            </div>
+          ) : undefined
         }
       >
         {isLoadingAthletes ? (
@@ -118,6 +145,28 @@ export function AthletesTab() {
                 key={athlete.athleteId}
                 title={`${athlete.user?.firstName} ${athlete.user?.lastName}`}
                 description={athlete.user?.email}
+                leading={
+                  canInvite ? (
+                    <Checkbox
+                      checked={selectedAthleteIds.includes(athlete.athleteId)}
+                      disabled={
+                        inviteRosterMutation.isPending ||
+                        (!selectedAthleteIds.includes(athlete.athleteId) &&
+                          selectedAthleteIds.length >= 100)
+                      }
+                      aria-label={m.select_athlete({
+                        name: `${athlete.user?.firstName} ${athlete.user?.lastName}`,
+                      })}
+                      onCheckedChange={(checked) =>
+                        setSelectedAthleteIds((current) =>
+                          checked
+                            ? [...current, athlete.athleteId]
+                            : current.filter((id) => id !== athlete.athleteId),
+                        )
+                      }
+                    />
+                  ) : undefined
+                }
               >
                 <Button
                   variant="outline"
@@ -173,25 +222,65 @@ export function AthletesTab() {
           </SettingsPanel>
         )}
       </SettingsSection>
-      <SentInvitationsSection
-        title={m.sent_invitations_to_athletes()}
-        description={m.sent_invitations_to_athletes_description()}
-        invitations={sentInvitations?.map((invitation) => ({
-          id: invitation.athleteInvitationId,
-          email: invitation.email,
-          createdAt: invitation.createdAt,
-        }))}
-        isLoading={sentInvitationsLoading}
-        isCancelling={cancelInvitationMutation.isPending}
-        onCancel={(id) => cancelInvitationMutation.mutate(id)}
-      />
+      {canInvite && selectedAthletes.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="mr-auto text-sm text-muted-foreground">
+            {m.roster_selected_count({ count: selectedAthletes.length })}
+          </p>
+          <Button
+            variant="outline"
+            onClick={() => setRosterInvitationOperation('SHARE')}
+          >
+            {m.invitation_operation_share()}
+          </Button>
+          <Button onClick={() => setRosterInvitationOperation('TRANSFER')}>
+            {m.invitation_operation_transfer()}
+          </Button>
+        </div>
+      )}
+      {canInvite && (
+        <SentInvitationsSection
+          title={m.sent_invitations_to_athletes()}
+          description={m.sent_invitations_to_athletes_description()}
+          invitations={sentInvitations?.map((invitation) => ({
+            id: invitation.athleteInvitationId,
+            email: invitation.email,
+            createdAt: invitation.createdAt,
+          }))}
+          isLoading={sentInvitationsLoading}
+          isCancelling={cancelInvitationMutation.isPending}
+          onCancel={(id) => cancelInvitationMutation.mutate(id)}
+        />
+      )}
 
-      <InviteAthleteDialog
-        open={inviteAthleteDialog}
-        onClose={() => setInviteAthleteDialog(false)}
-        onInvite={(email) => inviteAthleteMutation.mutate({ email })}
-        isLoading={inviteAthleteMutation.isPending}
-      />
+      {canInvite && (
+        <InviteAthleteDialog
+          open={inviteAthleteDialog}
+          onClose={() => setInviteAthleteDialog(false)}
+          onInvite={(email) => inviteAthleteMutation.mutate({ email })}
+          isLoading={inviteAthleteMutation.isPending}
+        />
+      )}
+      {rosterInvitationOperation && (
+        <RosterInvitationDialog
+          open
+          operation={rosterInvitationOperation}
+          athleteNames={selectedAthletes.map(
+            (athlete) =>
+              `${athlete.user?.firstName ?? ''} ${athlete.user?.lastName ?? ''}`.trim() ||
+              `#${athlete.athleteId}`,
+          )}
+          isLoading={inviteRosterMutation.isPending}
+          onClose={() => setRosterInvitationOperation(null)}
+          onInvite={(email) =>
+            inviteRosterMutation.mutate({
+              email,
+              operation: rosterInvitationOperation,
+              athleteIds: selectedAthletes.map((athlete) => athlete.athleteId),
+            })
+          }
+        />
+      )}
       <ConfirmAction
         open={!!deleteAthleteDialog}
         onClose={() => setDeleteAthleteDialog(null)}

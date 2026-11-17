@@ -3,6 +3,8 @@ import client, { routes } from '@/utils/axios';
 import {
   Athlete,
   AthleteSettings,
+  CreateInvitationLinkDto,
+  InvitationLinkDto,
   InviteCoachDto,
   TrainingZone,
   TrainingZoneValue,
@@ -42,6 +44,13 @@ export class AthleteAPI {
     await client.post(routes.athlete.inviteCoach, body);
   }
 
+  static async createInvitationLink(
+    body: CreateInvitationLinkDto,
+  ): Promise<InvitationLinkDto> {
+    const res = await client.post(routes.athlete.createInvitationLink, body);
+    return res.data;
+  }
+
   static async inviteAthlete(body: InviteCoachDto): Promise<void> {
     await client.post(routes.athlete.inviteAthlete, body);
   }
@@ -73,7 +82,7 @@ export class AthleteAPI {
   static async getPendingInvitations(): Promise<
     Array<{
       athleteInvitationId: number;
-      email: string;
+      email: string | null;
       token: string | null;
       status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | null;
       userId: number;
@@ -94,7 +103,7 @@ export class AthleteAPI {
   static async getSentAthleteInvitations(): Promise<
     Array<{
       athleteInvitationId: number;
-      email: string;
+      email: string | null;
       token: string | null;
       status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | null;
       createdAt: string;
@@ -112,9 +121,16 @@ export class AthleteAPI {
   static async getSentCoachInvitations(): Promise<
     Array<{
       coachInvitationId: number;
-      email: string;
+      email: string | null;
       token: string | null;
       status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+      purpose: 'PERSONAL' | 'COLLEAGUE' | 'SHARE' | 'TRANSFER';
+      athleteIds: number[];
+      athleteNames: {
+        athleteId: number;
+        firstName: string;
+        lastName: string;
+      }[];
       createdAt: string;
       updatedAt: string;
     }>

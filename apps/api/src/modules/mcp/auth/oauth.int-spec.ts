@@ -2,8 +2,11 @@ import { randomBytes } from 'node:crypto';
 
 import { ConfigService } from '@nestjs/config';
 
+import { UserRole } from '@openathlete/database';
+
 import { AuthUser } from 'src/modules/auth/decorators/user.decorator';
 import {
+  COACH_ATHLETE_ID,
   COACH_USER_ID,
   DELETED_ATHLETE_ID,
   DELETED_USER_ID,
@@ -35,6 +38,7 @@ describe('MCP OAuth (PostgreSQL)', () => {
   const athlete = {
     userId: DELETED_USER_ID,
     email: 'athlete@example.com',
+    roles: [UserRole.ATHLETE],
     athlete: { athleteId: DELETED_ATHLETE_ID },
     coachAthletes: [],
   } as unknown as AuthUser;
@@ -385,8 +389,23 @@ describe('MCP OAuth (PostgreSQL)', () => {
     );
 
     expect(await auth.authenticate(token)).toMatchObject({
-      user: { userId: DELETED_USER_ID },
+      user: { userId: DELETED_USER_ID, roles: [UserRole.ATHLETE] },
       scopes: ['read'],
+    });
+    const coach = {
+      ...athlete,
+      userId: COACH_USER_ID,
+      email: 'coach@example.com',
+      roles: [UserRole.COACH],
+      athlete: { athleteId: COACH_ATHLETE_ID },
+    } as AuthUser;
+    const { token: coachToken } = await auth.createPersonalToken(coach, {
+      name: 'Coach script',
+      scopes: ['write'],
+      expiresInDays: null,
+    });
+    expect(await auth.authenticate(coachToken)).toMatchObject({
+      user: { userId: COACH_USER_ID, roles: [UserRole.COACH] },
     });
     expect(await auth.authenticate(`${token}x`)).toBeNull();
     expect(await auth.authenticate('oa_pat_unknown')).toBeNull();

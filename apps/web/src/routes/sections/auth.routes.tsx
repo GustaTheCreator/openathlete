@@ -18,6 +18,12 @@ const CreateAccountPage = lazy(() =>
   })),
 );
 
+const InvitationPage = lazy(() =>
+  import('@/pages/auth/invitation').then((module) => ({
+    default: module.InvitationPage,
+  })),
+);
+
 const PasswordResetPage = lazy(() =>
   import('@/pages/auth/password-reset').then((module) => ({
     default: module.PasswordResetPage,
@@ -100,6 +106,17 @@ export const authRoutes: RouteObject[] = [
         ),
       },
     ],
+  },
+  {
+    // Public preview also remains available to signed-in invitees for explicit acceptance.
+    path: getPath(['auth', 'invitation']),
+    element: (
+      <AuthLayout>
+        <Suspense fallback={<LoadingScreen />}>
+          <InvitationPage />
+        </Suspense>
+      </AuthLayout>
+    ),
   },
   {
     path: getPath(['auth', 'oauth']),

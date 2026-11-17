@@ -41,6 +41,7 @@ import {
 import { emailTransportKind } from 'src/modules/notification/services/email-transport.service';
 import {
   PrismaService,
+  type PrismaTx,
   UserRow,
 } from 'src/modules/prisma/services/prisma.service';
 
@@ -220,13 +221,16 @@ export class UserService {
   }
 
   /**
-   * An invitation link must be valid before an account is created with it,
-   * and a password sign-up must use the address it was sent to. Google and
-   * Apple set the address themselves (Apple may hide it behind a relay).
+   * An invitation link must be valid before account creation, and every
+   * sign-up must use the address it was sent to, including provider sign-ups.
    */
   private async assertInvitationsUsable(
     email: string,
-    tokens: { invitationToken?: string; coachInvitationToken?: string },
+    tokens: {
+      invitationToken?: string;
+      coachInvitationToken?: string;
+      acceptInvitation?: boolean;
+    },
     emailFromProvider: boolean,
   ) {
     const invitations = await Promise.all([
@@ -246,7 +250,16 @@ export class UserService {
       if (!invitation) {
         throw new BadRequestException('Invalid or expired invitation token');
       }
-      if (!emailFromProvider && invitation.email.toLowerCase() !== email) {
+      if (invitation.email === null && emailFromProvider) {
+        throw new BadRequestException('OPEN_INVITATION_PROVIDER_UNSUPPORTED');
+      }
+      if (invitation.email === null && !tokens.acceptInvitation) {
+        throw new BadRequestException('OPEN_INVITATION_REQUIRES_ACCEPTANCE');
+      }
+      if (
+        invitation.email !== null &&
+        invitation.email.toLowerCase() !== email
+      ) {
         throw new BadRequestException('INVITATION_EMAIL_MISMATCH');
       }
     }
@@ -257,6 +270,25 @@ export class UserService {
     };
   }
 
+  private async serializable<T>(operation: (tx: PrismaTx) => Promise<T>) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.prisma.$transaction(operation, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (error) {
+        if (
+          !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+          error.code !== 'P2034' ||
+          attempt >= 5
+        ) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10 * (attempt + 1)));
+      }
+    }
+  }
+
   public createAccount = async (
     {
       email,
@@ -265,6 +297,7 @@ export class UserService {
       lastName,
       invitationToken,
       coachInvitationToken,
+      acceptInvitation,
       language,
       emailNews,
     }: CreateAccountDto,
@@ -274,7 +307,7 @@ export class UserService {
     const normalizedEmail = email.toLowerCase();
     const invitationGrants = await this.assertInvitationsUsable(
       normalizedEmail,
-      { invitationToken, coachInvitationToken },
+      { invitationToken, coachInvitationToken, acceptInvitation },
       emailFromProvider,
     );
     const hashedPassword = await this.hashPassword(password);
@@ -331,8 +364,8 @@ export class UserService {
 
     const allSports = Object.values(SportType) as SportType[];
 
-    const created = await this.prisma.user
-      .create({
+    const created = await this.serializable(async (tx) => {
+      const created = await tx.user.create({
         data: {
           email: normalizedEmail,
           password: hashedPassword,
@@ -342,13 +375,10 @@ export class UserService {
           language,
           // Ticked by the person on the form, never by default
           emailNewsConsentAt: emailNews ? new Date() : null,
-          roles:
-            invitationToken || coachInvitationToken
-              ? [
-                  ...(invitationGrants.athlete ? [UserRole.ATHLETE] : []),
-                  ...(invitationGrants.coach ? [UserRole.COACH] : []),
-                ]
-              : [UserRole.ATHLETE, UserRole.COACH],
+          roles: [
+            UserRole.ATHLETE,
+            ...(invitationGrants.coach ? [UserRole.COACH] : []),
+          ],
           athlete: {
             create: {
               trainingZones: {
@@ -375,32 +405,33 @@ export class UserService {
         select: {
           userId: true,
         },
-      })
-      .catch((error: unknown) => {
-        // Two sign-ups for the same email at once (double submit, OAuth
-        // callbacks) both pass the check above; the database decides
-        if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === 'P2002'
-        ) {
-          throw new ConflictException('User already exists');
-        }
-        throw error;
       });
-
-    if (invitationToken) {
-      await this.invitationService.consumeInvitation(
-        invitationToken,
-        created.userId,
-      );
-    }
-
-    if (coachInvitationToken) {
-      await this.coachInvitationService.consumeInvitation(
-        coachInvitationToken,
-        created.userId,
-      );
-    }
+      if (invitationToken) {
+        await this.invitationService.consumeInvitation(
+          invitationToken,
+          created.userId,
+          tx,
+        );
+      }
+      if (coachInvitationToken) {
+        await this.coachInvitationService.consumeInvitation(
+          coachInvitationToken,
+          created.userId,
+          tx,
+        );
+      }
+      return created;
+    }).catch((error: unknown) => {
+      // Two sign-ups for the same email at once (double submit, OAuth
+      // callbacks) both pass the check above; the database decides
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('User already exists');
+      }
+      throw error;
+    });
 
     this.eventEmitter.emit(
       SendEmailEvent.SLUG,
@@ -592,11 +623,7 @@ export class UserService {
 
     const hasInvitations =
       Boolean(data.coachEmail) || Boolean(data.athleteEmails?.length);
-    if (
-      hasInvitations &&
-      (!existingUser.roles.includes(UserRole.COACH) ||
-        !data.roles.includes(UserRole.COACH))
-    ) {
+    if (hasInvitations && !existingUser.roles.includes(UserRole.COACH)) {
       throw new ForbiddenException('Only coaches can send invitations');
     }
 
@@ -604,7 +631,7 @@ export class UserService {
     await this.prisma.user.update({
       where: { userId: user.userId },
       data: {
-        roles: data.roles,
+        roles: existingUser.roles,
         gender: data.gender as Gender | undefined,
         acquisitionSource: data.acquisitionSource,
         onboardingCompleted: true,
@@ -682,10 +709,11 @@ export class UserService {
     }
 
     // Invite coach if provided
-    if (data.coachEmail && data.roles.includes('ATHLETE')) {
+    if (data.coachEmail && existingUser.roles.includes(UserRole.ATHLETE)) {
       await this.coachInvitationService.createInvitation(
         user.userId,
         data.coachEmail,
+        user.userId,
       );
     }
 
@@ -693,11 +721,15 @@ export class UserService {
     if (
       data.athleteEmails &&
       data.athleteEmails.length > 0 &&
-      data.roles.includes('COACH')
+      existingUser.roles.includes(UserRole.COACH)
     ) {
       for (const email of data.athleteEmails) {
         try {
-          await this.invitationService.createInvitation(user.userId, email);
+          await this.invitationService.createInvitation(
+            user.userId,
+            email,
+            user.userId,
+          );
         } catch (error) {
           // Log but don't fail the entire onboarding if one invitation fails
           this.logger.warn(

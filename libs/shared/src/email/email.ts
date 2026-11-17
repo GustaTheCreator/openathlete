@@ -5,6 +5,13 @@ export const emailLanguageSchema = z.enum(['FR', 'EN', 'IT', 'ES', 'PT_BR']);
 
 export type EmailLanguage = z.infer<typeof emailLanguageSchema>;
 
+type CoachInvitationEmailProps = {
+  athleteName: string;
+  url: string;
+  purpose?: 'PERSONAL' | 'COLLEAGUE' | 'SHARE' | 'TRANSFER';
+  athleteCount?: number;
+};
+
 const emailSubjects: {
   'password-reset': Record<EmailLanguage, string>;
   welcome: Record<EmailLanguage, string>;
@@ -104,11 +111,11 @@ export const emailLibrary = {
   },
   'coach-invitation-new': {
     defaultSubject: emailSubjects['coach-invitation-new'],
-    props: {} as { athleteName: string; url: string },
+    props: {} as CoachInvitationEmailProps,
   },
   'coach-invitation-existing': {
     defaultSubject: emailSubjects['coach-invitation-existing'],
-    props: {} as { athleteName: string; url: string },
+    props: {} as CoachInvitationEmailProps,
   },
   'signup-notification': {
     defaultSubject: emailSubjects['signup-notification'],

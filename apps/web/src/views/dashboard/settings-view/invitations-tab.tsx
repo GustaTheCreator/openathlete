@@ -9,8 +9,14 @@ import {
   useRejectInvitationMutation as useCoachRejectInvitationMutation,
 } from '@/api/coach';
 import { Button } from '@/components/ui/button';
-import { useUserRoles } from '@/contexts/auth';
+import { useAuthContext } from '@/contexts/auth';
 import { m } from '@/paraglide/messages';
+import { clearPendingInvitationToken } from '@/utils/invitation-token';
+import {
+  InvitationPurpose,
+  invitationPurposeLabel,
+  openInvitationLabel,
+} from '@/utils/invitations';
 import { toast } from 'sonner';
 
 import {
@@ -24,7 +30,9 @@ import {
 type Invitation = {
   id: number;
   name: string;
-  email: string;
+  email: string | null;
+  purpose?: InvitationPurpose;
+  athleteNames?: string[];
 };
 
 function InvitationRows({
@@ -45,7 +53,18 @@ function InvitationRows({
           key={invitation.id}
           stacked
           title={invitation.name}
-          description={invitation.email}
+          description={[
+            invitation.email || openInvitationLabel(),
+            invitation.purpose && invitationPurposeLabel(invitation.purpose),
+            invitation.purpose === 'SHARE' &&
+              m.roster_share_received_description(),
+            invitation.purpose === 'TRANSFER' &&
+              m.roster_transfer_received_description(),
+            invitation.athleteNames?.length &&
+              invitation.athleteNames.join(', '),
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         >
           <Button
             variant="outline"
@@ -71,15 +90,10 @@ function InvitationRows({
 }
 
 export function InvitationsTab() {
-  const roles = useUserRoles();
-  const isAthlete = roles?.includes('ATHLETE');
-  const isCoach = roles?.includes('COACH');
-
+  const { initialize } = useAuthContext();
   // Athlete invitations (invitations from coaches)
   const { data: athleteInvitations, isLoading: athleteInvitationsLoading } =
-    useGetPendingInvitationsQuery({
-      enabled: isAthlete,
-    });
+    useGetPendingInvitationsQuery({ enabled: true });
 
   const acceptAthleteInvitation = useAcceptInvitationMutation({
     onSuccess: () => {
@@ -101,12 +115,12 @@ export function InvitationsTab() {
 
   // Coach invitations (invitations from athletes)
   const { data: coachInvitations, isLoading: coachInvitationsLoading } =
-    useCoachGetPendingInvitationsQuery({
-      enabled: isCoach,
-    });
+    useCoachGetPendingInvitationsQuery({ enabled: true });
 
   const acceptCoachInvitation = useCoachAcceptInvitationMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
+      await initialize();
+      clearPendingInvitationToken();
       toast.success(m.invitation_accepted());
     },
     onError: () => {
@@ -136,7 +150,7 @@ export function InvitationsTab() {
 
   return (
     <div className="space-y-8">
-      {isAthlete && athleteInvitations && athleteInvitations.length > 0 && (
+      {athleteInvitations && athleteInvitations.length > 0 && (
         <SettingsSection
           title={m.invitations_from_coaches()}
           description={m.invitations_from_coaches_description()}
@@ -157,7 +171,7 @@ export function InvitationsTab() {
         </SettingsSection>
       )}
 
-      {isCoach && coachInvitations && coachInvitations.length > 0 && (
+      {coachInvitations && coachInvitations.length > 0 && (
         <SettingsSection
           title={m.invitations_from_athletes()}
           description={m.invitations_from_athletes_description()}
@@ -167,6 +181,10 @@ export function InvitationsTab() {
               id: invitation.coachInvitationId,
               name: `${invitation.athleteUser.firstName} ${invitation.athleteUser.lastName}`,
               email: invitation.athleteUser.email,
+              purpose: invitation.purpose,
+              athleteNames: invitation.athleteNames.map(
+                (athlete) => `${athlete.firstName} ${athlete.lastName}`,
+              ),
             }))}
             isPending={
               acceptCoachInvitation.isPending || rejectCoachInvitation.isPending

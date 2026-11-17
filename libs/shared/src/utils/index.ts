@@ -52,3 +52,4 @@ export * from './image-refs';
 export * from './signup-attribution';
 export * from './workout-text';
 export * from './strength';
+export * from './roles';

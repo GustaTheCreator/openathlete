@@ -1,5 +1,6 @@
 import { RHFTextField } from '@/components/hook-form';
 import { FormProvider } from '@/components/hook-form';
+import { InvitationLinkPanel } from '@/components/invite-link-dialog/invite-link.dialog';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -56,6 +57,7 @@ export function InviteAthleteDialog({ open, onClose, onInvite, isLoading }: P) {
               placeholder={m.enter_athlete_email()}
               required
             />
+            {open && <InvitationLinkPanel kind="ATHLETE" />}
             <div className="flex justify-end gap-2">
               <Button
                 type="button"

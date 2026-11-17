@@ -2,7 +2,11 @@
 
 Self-hosted fork based on upstream v1.6.0, with bidirectional Wahoo synchronization and session/permission hardening.
 
-[Versioned releases](https://github.com/GustaTheCreator/openathlete/releases) · [Deploy and versioning](DEPLOYMENT.md) · [Build this fork](SELFHOSTING-SOURCE.md) · [Security and limitations](SECURITY.md)
+[Versioned releases](https://github.com/GustaTheCreator/openathlete/releases) · [Documentation](.github/docs/README.md) · [Deploy and versioning](.github/docs/DEPLOYMENT.md) · [Build this fork](.github/docs/SELFHOSTING-SOURCE.md) · [Roles and invitations](.github/docs/ROLE-POLICY.md) · [Security and limitations](.github/SECURITY.md)
+
+The default and stable branch is **`tourmalet`**. Production installs a versioned release from that branch, pinned to image digests; it does not follow every commit. `main` retains upstream development and is separate from the deployed fork. Development branches use `codex/*` and target `tourmalet` in pull requests.
+
+Shared agent instructions live in [AGENTS.md](AGENTS.md), with scoped instructions in each application and reusable workflows in `.agents/skills/`. Community policies are in `.github/`; fork guides are indexed in `.github/docs/`.
 
 The upstream project documentation follows below. Deployment credentials, athlete data and personal operational notes are not included.
 
@@ -114,7 +118,7 @@ Here is what you need to be able to run OpenAthlete.
 
 ### Extensão local Tourmalet — Wahoo
 
-Esta cópia baseada em v1.6.0 acrescenta Wahoo para importar atividades e enviar treinos de ciclismo. O código personalizado está no ramo estável `tourmalet`; as atualizações passam por testes e releases versionadas, que o servidor instala por digest. O fluxo de publicação, validação de migrações e recuperação está em [DEPLOYMENT.md](DEPLOYMENT.md). Uma alteração local só chega ao servidor depois de publicada como release.
+Esta cópia baseada em v1.6.0 acrescenta Wahoo para importar atividades e enviar treinos de ciclismo. O código personalizado está no ramo estável `tourmalet`; as atualizações passam por testes e releases versionadas, que o servidor instala por digest. O fluxo de publicação, validação de migrações e recuperação está em [DEPLOYMENT.md](.github/docs/DEPLOYMENT.md). Uma alteração local só chega ao servidor depois de publicada como release.
 
 ### Setup
 
@@ -325,7 +329,7 @@ Distributed under the [AGPLv3 License](https://github.com/openathleteorg/openath
 
 ## Contributing
 
-Please see our [contributing guide](/CONTRIBUTING.md).
+Please see our [contributing guide](.github/CONTRIBUTING.md).
 
 ### Good First Issues
 

@@ -14,25 +14,43 @@ import { BadRequestException as BadRequestException2 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
-import { InvitationStatus, UserRole } from '@openathlete/database';
-import { ApiEnvSchemaType } from '@openathlete/shared';
+import {
+  CoachInvitationPurpose,
+  InvitationStatus,
+  Prisma,
+  UserRole,
+} from '@openathlete/database';
+import {
+  ApiEnvSchemaType,
+  InvitationLinkDto,
+  SubscriptionPlan,
+  getMaxAthletes,
+} from '@openathlete/shared';
 
 import { SendEmailEvent } from 'src/events';
 import { AnalyticsService } from 'src/modules/analytics/analytics.service';
-import { PrismaService } from 'src/modules/prisma/services/prisma.service';
+import {
+  PrismaService,
+  type PrismaTx,
+} from 'src/modules/prisma/services/prisma.service';
 import { FeatureAccessService } from 'src/modules/subscription';
+
+import { InvitationPolicyService } from './invitation-policy.service';
 
 /**
  * Whether the invitation is for this coach. One sent before the coach had
  * an account has no coachUserId: it names them by email until they answer.
  */
 const isFor = (
-  invitation: { coachUserId: number | null; email: string },
+  invitation: { coachUserId: number | null; email: string | null },
   coach: { userId: number; email: string },
 ) =>
   invitation.coachUserId === coach.userId ||
   (invitation.coachUserId === null &&
+    invitation.email !== null &&
     invitation.email.toLowerCase() === coach.email.toLowerCase());
+
+const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class CoachInvitationService {
@@ -42,6 +60,7 @@ export class CoachInvitationService {
     private eventEmitter: EventEmitter2,
     @Inject(forwardRef(() => FeatureAccessService))
     private featureAccessService: FeatureAccessService,
+    private readonly invitationPolicy: InvitationPolicyService,
     @Optional() private readonly analytics?: AnalyticsService,
   ) {}
 
@@ -58,7 +77,19 @@ export class CoachInvitationService {
     return randomUUID();
   }
 
-  async createInvitation(athleteUserId: number, email: string) {
+  async createInvitation(
+    athleteUserId: number,
+    email: string,
+    actorUserId = athleteUserId,
+    options: {
+      purpose?: 'PERSONAL' | 'COLLEAGUE';
+    } = {},
+  ) {
+    await this.invitationPolicy.assertCanIssueInvitations(
+      actorUserId,
+      athleteUserId,
+    );
+    const purpose = options.purpose ?? CoachInvitationPurpose.PERSONAL;
     const normalizedEmail = email.toLowerCase();
 
     const athleteUser = await this.prisma.user.findUnique({
@@ -78,16 +109,18 @@ export class CoachInvitationService {
       throw new NotFoundException('Athlete not found');
     }
 
-    if (!athleteUser.onboardingCompleted) {
+    if (actorUserId === athleteUserId && !athleteUser.onboardingCompleted) {
       throw new ForbiddenException('Complete onboarding before inviting');
     }
 
-    if (
-      !Array.isArray(athleteUser.roles) ||
-      !athleteUser.roles.includes(UserRole.COACH)
-    ) {
-      throw new ForbiddenException('Only coaches can send invitations');
+    if (!Array.isArray(athleteUser.roles)) {
+      throw new ForbiddenException('Invalid account roles');
     }
+
+    const athlete = await this.prisma.athlete.findUnique({
+      where: { userId: athleteUserId },
+    });
+    if (!athlete) throw new NotFoundException('Athlete not found');
 
     if (athleteUser.email.toLowerCase() === normalizedEmail) {
       throw new BadRequestException('You cannot invite yourself');
@@ -100,20 +133,15 @@ export class CoachInvitationService {
 
     if (existingUser) {
       // Check if coach is already linked to this athlete
-      const athlete = await this.prisma.athlete.findUnique({
-        where: { userId: athleteUserId },
-      });
-
-      if (!athlete) {
-        throw new NotFoundException('Athlete not found');
-      }
-
-      const existingLink = await this.prisma.coachAthlete.findFirst({
-        where: {
-          athleteId: athlete.athleteId,
-          userId: existingUser.userId,
-        },
-      });
+      const existingLink =
+        purpose === CoachInvitationPurpose.PERSONAL
+          ? await this.prisma.coachAthlete.findFirst({
+              where: {
+                athleteId: athlete.athleteId,
+                userId: existingUser.userId,
+              },
+            })
+          : null;
 
       if (existingLink) {
         throw new ConflictException('This coach is already linked to you');
@@ -124,6 +152,7 @@ export class CoachInvitationService {
         where: {
           email: normalizedEmail,
           athleteUserId: athleteUserId,
+          purpose,
           status: InvitationStatus.PENDING,
         },
       });
@@ -140,6 +169,7 @@ export class CoachInvitationService {
           email: normalizedEmail,
           athleteUserId: athleteUserId,
           coachUserId: existingUser.userId,
+          purpose,
           status: InvitationStatus.PENDING,
         },
       });
@@ -155,6 +185,7 @@ export class CoachInvitationService {
           params: {
             athleteName: `${athleteUser.firstName} ${athleteUser.lastName}`,
             url: invitationUrl,
+            purpose,
           },
         }),
       );
@@ -169,6 +200,7 @@ export class CoachInvitationService {
         where: {
           email: normalizedEmail,
           athleteUserId: athleteUserId,
+          purpose,
           status: InvitationStatus.PENDING,
         },
       });
@@ -201,6 +233,7 @@ export class CoachInvitationService {
           email: normalizedEmail,
           token,
           athleteUserId: athleteUserId,
+          purpose,
           status: InvitationStatus.PENDING,
         },
       });
@@ -216,6 +249,7 @@ export class CoachInvitationService {
           params: {
             athleteName: `${athleteUser.firstName} ${athleteUser.lastName}`,
             url: invitationUrl,
+            purpose,
           },
           // Used when the invitee has no account yet
           language: athleteUser.language,
@@ -248,181 +282,549 @@ export class CoachInvitationService {
     }
 
     // Check if invitation is still valid (7 days)
-    const now = new Date();
-    const invitationDate = new Date(invitation.createdAt);
-    const diff = now.getTime() - invitationDate.getTime();
-    const sevenDays = 60 * 60 * 24 * 7 * 1000;
-
-    if (diff > sevenDays) {
-      await this.prisma.coachInvitation.delete({
-        where: {
-          coachInvitationId: invitation.coachInvitationId,
-        },
-      });
+    if (Date.now() - invitation.createdAt.getTime() > INVITATION_TTL_MS)
       return null;
-    }
 
     return invitation;
   }
 
-  async consumeInvitation(token: string, coachUserId: number) {
-    const invitation = await this.verifyInvitationToken(token);
-
-    if (!invitation) {
-      throw new BadRequestException('Invalid or expired invitation token');
-    }
-
-    // Get athlete
-    const athlete = await this.prisma.athlete.findUnique({
-      where: { userId: invitation.athleteUserId },
+  async createOpenInvitationLink(
+    athleteUserId: number,
+    purpose: CoachInvitationPurpose = CoachInvitationPurpose.PERSONAL,
+    actorUserId = athleteUserId,
+  ): Promise<InvitationLinkDto> {
+    await this.invitationPolicy.assertCanIssueInvitations(
+      actorUserId,
+      athleteUserId,
+    );
+    const owner = await this.prisma.user.findUnique({
+      where: { userId: athleteUserId },
+      select: {
+        roles: true,
+        onboardingCompleted: true,
+        athlete: { select: { athleteId: true } },
+      },
     });
-
-    if (!athlete) {
+    if (!owner || !owner.athlete)
       throw new NotFoundException('Athlete not found');
+    if (!owner.onboardingCompleted || !owner.roles.includes(UserRole.COACH)) {
+      throw new ForbiddenException('Only onboarded coaches can invite');
     }
-
-    // Check athlete limit for coach
-    const canAdd =
-      await this.featureAccessService.checkAthleteLimit(coachUserId);
-    if (!canAdd) {
-      throw new BadRequestException2(
-        'You have reached the maximum number of athletes for your subscription plan',
-      );
-    }
-
-    // Claim the invitation and link the coach together: of two sign-ups
-    // racing with one link, only the first gets in
-    await this.prisma.$transaction(async (tx) => {
-      const claimed = await tx.coachInvitation.updateMany({
+    const cutoff = new Date(Date.now() - INVITATION_TTL_MS);
+    const invitation = await this.serializable(async (tx) => {
+      const existing = await tx.coachInvitation.findFirst({
         where: {
-          coachInvitationId: invitation.coachInvitationId,
-          token,
+          athleteUserId,
+          email: null,
+          purpose,
+          status: InvitationStatus.PENDING,
+          token: { not: null },
+          createdAt: { gte: cutoff },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (existing) return existing;
+      return tx.coachInvitation.create({
+        data: {
+          athleteUserId,
+          email: null,
+          token: await this.generateInvitationToken(),
+          purpose,
           status: InvitationStatus.PENDING,
         },
-        data: {
-          status: InvitationStatus.ACCEPTED,
-          coachUserId: coachUserId,
-          token: null,
-        },
-      });
-      if (claimed.count !== 1) {
-        throw new BadRequestException('Invalid or expired invitation token');
-      }
-      await tx.coachAthlete.create({
-        data: {
-          athleteId: athlete.athleteId,
-          userId: coachUserId,
-        },
       });
     });
-    await this.reportLinked(coachUserId, athlete.athleteId);
+    const url = new URL(
+      '/auth/invitation',
+      this.configService.getOrThrow('APP_URL'),
+    );
+    url.searchParams.set('token', invitation.token!);
+    return {
+      url: url.toString(),
+      expiresAt: new Date(
+        invitation.createdAt.getTime() + INVITATION_TTL_MS,
+      ).toISOString(),
+    };
   }
 
-  private async coach(coachUserId: number) {
-    const coach = await this.prisma.user.findUnique({
+  async createRosterInvitation(
+    athleteUserId: number,
+    email: string,
+    operation: 'SHARE' | 'TRANSFER',
+    athleteIds: number[],
+    actorUserId = athleteUserId,
+  ) {
+    await this.invitationPolicy.assertCanIssueInvitations(
+      actorUserId,
+      athleteUserId,
+    );
+    if (
+      athleteIds.length === 0 ||
+      athleteIds.length > 100 ||
+      new Set(athleteIds).size !== athleteIds.length
+    ) {
+      throw new BadRequestException(
+        'Select between 1 and 100 distinct athletes',
+      );
+    }
+    const normalizedEmail = email.toLowerCase();
+    const purpose =
+      operation === 'SHARE'
+        ? CoachInvitationPurpose.SHARE
+        : CoachInvitationPurpose.TRANSFER;
+    const result = await this.serializable(async (tx) => {
+      const owner = await tx.user.findUnique({
+        where: { userId: athleteUserId },
+        select: {
+          email: true,
+          firstName: true,
+          lastName: true,
+          language: true,
+          roles: true,
+          onboardingCompleted: true,
+        },
+      });
+      if (!owner) throw new NotFoundException('User not found');
+      if (!owner.roles.includes(UserRole.COACH) || !owner.onboardingCompleted) {
+        throw new ForbiddenException(
+          'Only onboarded coaches can share athletes',
+        );
+      }
+      if (owner.email.toLowerCase() === normalizedEmail) {
+        throw new BadRequestException('You cannot invite yourself');
+      }
+      const links = await tx.coachAthlete.findMany({
+        where: { userId: athleteUserId, athleteId: { in: athleteIds } },
+        select: { athleteId: true },
+      });
+      if (links.length !== athleteIds.length) {
+        throw new ForbiddenException('You do not coach every selected athlete');
+      }
+      const duplicate = await tx.coachInvitation.findFirst({
+        where: {
+          athleteUserId,
+          email: normalizedEmail,
+          purpose,
+          status: InvitationStatus.PENDING,
+          createdAt: { gte: new Date(Date.now() - INVITATION_TTL_MS) },
+        },
+      });
+      if (duplicate) {
+        throw new ConflictException(
+          'An invitation has already been sent to this email',
+        );
+      }
+      const recipient = await tx.user.findUnique({
+        where: { email: normalizedEmail },
+        select: { userId: true },
+      });
+      const invitation = await tx.coachInvitation.create({
+        data: {
+          email: normalizedEmail,
+          token: recipient ? null : await this.generateInvitationToken(),
+          athleteUserId,
+          coachUserId: recipient?.userId,
+          purpose,
+          athleteIds,
+          status: InvitationStatus.PENDING,
+        },
+      });
+      return {
+        invitation,
+        athleteName: `${owner.firstName} ${owner.lastName}`.trim(),
+      };
+    });
+
+    const { invitation, athleteName } = result;
+    const url = invitation.token
+      ? `${this.configService.getOrThrow('APP_URL')}/auth/create-account?coach-invitation=${invitation.token}`
+      : `${this.configService.getOrThrow('APP_URL')}/dashboard/settings?tab=invitations`;
+    this.eventEmitter.emit(
+      SendEmailEvent.SLUG,
+      new SendEmailEvent({
+        type: invitation.token
+          ? 'coach-invitation-new'
+          : 'coach-invitation-existing',
+        to: normalizedEmail,
+        params: {
+          athleteName,
+          url,
+          purpose,
+          athleteCount: athleteIds.length,
+        },
+      }),
+    );
+    await this.analytics?.capture(athleteUserId, 'coach_invited');
+    return invitation;
+  }
+
+  private async serializable<T>(operation: (tx: PrismaTx) => Promise<T>) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.prisma.$transaction(operation, {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (error) {
+        if (
+          !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+          error.code !== 'P2034' ||
+          attempt >= 5
+        ) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10 * (attempt + 1)));
+      }
+    }
+  }
+
+  private async recipient(tx: PrismaTx, coachUserId: number) {
+    const coach = await tx.user.findUnique({
       where: { userId: coachUserId },
-      select: { userId: true, email: true, roles: true },
+      select: { userId: true, email: true },
     });
     if (!coach) throw new NotFoundException('User not found');
     return coach;
   }
 
-  async acceptInvitation(coachUserId: number, invitationId: number) {
-    const invitation = await this.prisma.coachInvitation.findUnique({
+  private async withAthleteNames<
+    T extends { purpose: CoachInvitationPurpose; athleteIds: number[] },
+  >(invitations: T[]) {
+    const ids = [
+      ...new Set(
+        invitations
+          .filter(
+            ({ purpose }) =>
+              purpose === CoachInvitationPurpose.SHARE ||
+              purpose === CoachInvitationPurpose.TRANSFER,
+          )
+          .flatMap(({ athleteIds }) => athleteIds),
+      ),
+    ];
+    const athletes = ids.length
+      ? await this.prisma.athlete.findMany({
+          where: { athleteId: { in: ids } },
+          select: {
+            athleteId: true,
+            user: { select: { firstName: true, lastName: true } },
+          },
+        })
+      : [];
+    const byId = new Map(
+      athletes.map((athlete) => [athlete.athleteId, athlete]),
+    );
+    return invitations.map((invitation) => ({
+      ...invitation,
+      athleteNames:
+        invitation.purpose === CoachInvitationPurpose.SHARE ||
+        invitation.purpose === CoachInvitationPurpose.TRANSFER
+          ? invitation.athleteIds.flatMap((athleteId) => {
+              const athlete = byId.get(athleteId);
+              return athlete ? [{ athleteId, ...athlete.user }] : [];
+            })
+          : [],
+    }));
+  }
+
+  private async applyInvitation(
+    tx: PrismaTx,
+    invitationId: number,
+    coachUserId: number,
+    expectedToken?: string,
+    newAccount = false,
+  ) {
+    const invitation = await tx.coachInvitation.findUnique({
       where: { coachInvitationId: invitationId },
     });
-
-    if (!invitation) {
-      throw new NotFoundException('Invitation not found');
-    }
-
-    const coach = await this.coach(coachUserId);
-    if (!isFor(invitation, coach)) {
-      throw new BadRequestException('This invitation is not for you');
-    }
-
-    if (invitation.status !== InvitationStatus.PENDING) {
+    if (!invitation || invitation.status !== InvitationStatus.PENDING) {
       throw new BadRequestException('This invitation is no longer pending');
     }
-
-    // Get athlete
-    const athlete = await this.prisma.athlete.findUnique({
-      where: { userId: invitation.athleteUserId },
-    });
-
-    if (!athlete) {
-      throw new NotFoundException('Athlete not found');
+    if (
+      Date.now() - invitation.createdAt.getTime() > INVITATION_TTL_MS ||
+      (expectedToken !== undefined && invitation.token !== expectedToken) ||
+      (expectedToken === undefined &&
+        invitation.email === null &&
+        invitation.coachUserId === null)
+    ) {
+      throw new BadRequestException('Invalid or expired invitation token');
     }
 
-    // Check athlete limit for coach
-    const canAdd =
-      await this.featureAccessService.checkAthleteLimit(coachUserId);
-    if (!canAdd) {
-      throw new BadRequestException2(
-        'You have reached the maximum number of athletes for your subscription plan',
-      );
+    const [recipient, sender] = await Promise.all([
+      tx.user.findUnique({
+        where: { userId: coachUserId },
+        select: {
+          email: true,
+          roles: true,
+          athlete: { select: { athleteId: true } },
+        },
+      }),
+      tx.user.findUnique({
+        where: { userId: invitation.athleteUserId },
+        select: {
+          email: true,
+          roles: true,
+          onboardingCompleted: true,
+          athlete: { select: { athleteId: true } },
+        },
+      }),
+    ]);
+    if (!recipient) throw new NotFoundException('User not found');
+    if (!recipient.athlete) {
+      throw new NotFoundException('Athlete profile not found');
     }
-
-    // Accept and link together: a double click links the coach once
-    await this.prisma.$transaction(async (tx) => {
-      const claimed = await tx.coachInvitation.updateMany({
+    if (!sender) throw new NotFoundException('Invitation sender not found');
+    if (invitation.coachUserId && invitation.coachUserId !== coachUserId) {
+      throw new BadRequestException('This invitation is not for you');
+    }
+    if (
+      invitation.email !== null &&
+      invitation.email.toLowerCase() !== recipient.email.toLowerCase()
+    ) {
+      throw new BadRequestException('This invitation is not for you');
+    }
+    if (recipient.email.toLowerCase() === sender.email.toLowerCase()) {
+      throw new BadRequestException('You cannot accept your own invitation');
+    }
+    let athleteIds: number[] = [];
+    if (invitation.purpose === CoachInvitationPurpose.PERSONAL) {
+      if (!sender.athlete) throw new NotFoundException('Athlete not found');
+      athleteIds = [sender.athlete.athleteId];
+    } else if (
+      invitation.purpose === CoachInvitationPurpose.SHARE ||
+      invitation.purpose === CoachInvitationPurpose.TRANSFER
+    ) {
+      if (
+        !sender.roles.includes(UserRole.COACH) ||
+        !sender.onboardingCompleted
+      ) {
+        throw new ForbiddenException(
+          'The invitation sender is no longer an onboarded coach',
+        );
+      }
+      athleteIds = invitation.athleteIds;
+      const senderLinks = await tx.coachAthlete.findMany({
         where: {
-          coachInvitationId: invitation.coachInvitationId,
-          status: InvitationStatus.PENDING,
+          userId: invitation.athleteUserId,
+          athleteId: { in: athleteIds },
         },
-        data: { status: InvitationStatus.ACCEPTED, coachUserId },
+        select: { athleteId: true },
       });
-      if (claimed.count !== 1) {
-        throw new BadRequestException('This invitation is no longer pending');
+      if (senderLinks.length !== athleteIds.length) {
+        throw new ConflictException('The sender no longer coaches this roster');
       }
-      await tx.coachAthlete.create({
-        data: {
-          athleteId: athlete.athleteId,
-          userId: coachUserId,
-        },
-      });
-      if (!coach.roles.includes(UserRole.COACH)) {
-        await tx.user.update({
+    }
+
+    const currentLinks = athleteIds.length
+      ? await tx.coachAthlete.findMany({
+          where: { userId: coachUserId, athleteId: { in: athleteIds } },
+          select: { athleteId: true },
+        })
+      : [];
+    const currentIds = new Set(currentLinks.map((link) => link.athleteId));
+    const newAthleteIds = athleteIds.filter((id) => !currentIds.has(id));
+
+    if (newAthleteIds.length) {
+      let maxAthletes: number | null;
+      try {
+        maxAthletes =
+          await this.featureAccessService.getMaxAthletes(coachUserId);
+      } catch (error) {
+        if (!(newAccount && error instanceof NotFoundException)) throw error;
+        maxAthletes = getMaxAthletes(SubscriptionPlan.FREE);
+      }
+      if (maxAthletes !== null) {
+        const currentCount = await tx.coachAthlete.count({
           where: { userId: coachUserId },
-          data: { roles: { push: UserRole.COACH } },
         });
+        if (currentCount + newAthleteIds.length > maxAthletes) {
+          throw new BadRequestException2(
+            'You have reached the maximum number of athletes for your subscription plan',
+          );
+        }
       }
+    }
+
+    const claimed = await tx.coachInvitation.updateMany({
+      where: {
+        coachInvitationId: invitationId,
+        status: InvitationStatus.PENDING,
+        ...(expectedToken !== undefined && { token: expectedToken }),
+      },
+      data: {
+        status: InvitationStatus.ACCEPTED,
+        coachUserId,
+        token: null,
+      },
     });
-    await this.reportLinked(coachUserId, athlete.athleteId);
+    if (claimed.count !== 1) {
+      throw new BadRequestException('This invitation is no longer pending');
+    }
+    if (newAthleteIds.length) {
+      await tx.coachAthlete.createMany({
+        data: newAthleteIds.map((athleteId) => ({
+          athleteId,
+          userId: coachUserId,
+        })),
+      });
+    }
+    if (invitation.purpose === CoachInvitationPurpose.TRANSFER) {
+      await tx.coachAthlete.deleteMany({
+        where: {
+          userId: invitation.athleteUserId,
+          athleteId: { in: athleteIds },
+        },
+      });
+    }
+    const currentRoles = await tx.user.findUniqueOrThrow({
+      where: { userId: coachUserId },
+      select: { roles: true },
+    });
+    const roles = Array.from(
+      new Set([...currentRoles.roles, UserRole.ATHLETE, UserRole.COACH]),
+    );
+    if (roles.length !== currentRoles.roles.length) {
+      await tx.user.update({ where: { userId: coachUserId }, data: { roles } });
+    }
+    return newAthleteIds;
+  }
+
+  async consumeInvitation(token: string, coachUserId: number, tx?: PrismaTx) {
+    const apply = async (client: PrismaTx) => {
+      const invitation = await client.coachInvitation.findUnique({
+        where: { token },
+      });
+      if (
+        !invitation ||
+        invitation.status !== InvitationStatus.PENDING ||
+        Date.now() - invitation.createdAt.getTime() > INVITATION_TTL_MS
+      ) {
+        throw new BadRequestException('Invalid or expired invitation token');
+      }
+      if (
+        tx &&
+        (invitation.purpose === CoachInvitationPurpose.SHARE ||
+          invitation.purpose === CoachInvitationPurpose.TRANSFER)
+      ) {
+        const recipient = await client.user.findUnique({
+          where: { userId: coachUserId },
+          select: { email: true },
+        });
+        if (
+          !recipient ||
+          (invitation.email !== null &&
+            invitation.email.toLowerCase() !== recipient.email.toLowerCase())
+        ) {
+          throw new BadRequestException('This invitation is not for you');
+        }
+        const reserved = await client.coachInvitation.updateMany({
+          where: {
+            coachInvitationId: invitation.coachInvitationId,
+            token,
+            status: InvitationStatus.PENDING,
+          },
+          data: { coachUserId, token: null },
+        });
+        if (reserved.count !== 1) {
+          throw new BadRequestException('This invitation is no longer pending');
+        }
+        return [];
+      }
+      return this.applyInvitation(
+        client,
+        invitation.coachInvitationId,
+        coachUserId,
+        token,
+        Boolean(tx),
+      );
+    };
+    const linked = tx ? await apply(tx) : await this.serializable(apply);
+    for (const athleteId of linked) {
+      await this.reportLinked(coachUserId, athleteId);
+    }
+  }
+
+  async acceptToken(token: string, coachUserId: number) {
+    const linked = await this.serializable(async (tx) => {
+      const invitation = await tx.coachInvitation.findUnique({
+        where: { token },
+      });
+      if (!invitation) {
+        throw new BadRequestException('Invalid or expired invitation token');
+      }
+      return this.applyInvitation(
+        tx,
+        invitation.coachInvitationId,
+        coachUserId,
+        token,
+      );
+    });
+    for (const athleteId of linked) {
+      await this.reportLinked(coachUserId, athleteId);
+    }
+  }
+
+  async acceptInvitation(coachUserId: number, invitationId: number) {
+    const linked = await this.serializable((tx) =>
+      this.applyInvitation(tx, invitationId, coachUserId),
+    );
+    for (const athleteId of linked) {
+      await this.reportLinked(coachUserId, athleteId);
+    }
   }
 
   async rejectInvitation(coachUserId: number, invitationId: number) {
-    const invitation = await this.prisma.coachInvitation.findUnique({
-      where: { coachInvitationId: invitationId },
+    await this.serializable(async (tx) => {
+      const invitation = await tx.coachInvitation.findUnique({
+        where: { coachInvitationId: invitationId },
+      });
+      if (!invitation) throw new NotFoundException('Invitation not found');
+      const coach = await this.recipient(tx, coachUserId);
+      if (!isFor(invitation, coach)) {
+        throw new BadRequestException('This invitation is not for you');
+      }
+      if (invitation.status !== InvitationStatus.PENDING) {
+        throw new BadRequestException('This invitation is no longer pending');
+      }
+      await tx.coachInvitation.updateMany({
+        where: {
+          coachInvitationId: invitationId,
+          status: InvitationStatus.PENDING,
+        },
+        data: { status: InvitationStatus.REJECTED, coachUserId, token: null },
+      });
     });
+  }
 
-    if (!invitation) {
-      throw new NotFoundException('Invitation not found');
-    }
-
-    if (!isFor(invitation, await this.coach(coachUserId))) {
-      throw new BadRequestException('This invitation is not for you');
-    }
-
-    if (invitation.status !== InvitationStatus.PENDING) {
-      throw new BadRequestException('This invitation is no longer pending');
-    }
-
-    // Update invitation status to REJECTED
-    await this.prisma.coachInvitation.update({
-      where: {
-        coachInvitationId: invitation.coachInvitationId,
-      },
-      data: {
-        status: InvitationStatus.REJECTED,
-        coachUserId,
-      },
+  async rejectToken(token: string, coachUserId: number) {
+    await this.serializable(async (tx) => {
+      const invitation = await tx.coachInvitation.findUnique({
+        where: { token },
+      });
+      if (
+        !invitation ||
+        invitation.status !== InvitationStatus.PENDING ||
+        Date.now() - invitation.createdAt.getTime() > INVITATION_TTL_MS
+      ) {
+        throw new BadRequestException('Invalid or expired invitation token');
+      }
+      const coach = await this.recipient(tx, coachUserId);
+      if (
+        (invitation.coachUserId !== null &&
+          invitation.coachUserId !== coachUserId) ||
+        (invitation.email !== null &&
+          invitation.email.toLowerCase() !== coach.email.toLowerCase())
+      ) {
+        throw new BadRequestException('This invitation is not for you');
+      }
+      await tx.coachInvitation.updateMany({
+        where: { coachInvitationId: invitation.coachInvitationId, token },
+        data: { status: InvitationStatus.REJECTED, coachUserId, token: null },
+      });
     });
   }
 
   async getPendingInvitationsForCoach(coachUserId: number) {
-    const coach = await this.coach(coachUserId);
-    return await this.prisma.coachInvitation.findMany({
+    const coach = await this.recipient(this.prisma, coachUserId);
+    const invitations = await this.prisma.coachInvitation.findMany({
       where: {
         status: InvitationStatus.PENDING,
         OR: [
@@ -430,7 +832,13 @@ export class CoachInvitationService {
           { coachUserId: null, email: coach.email.toLowerCase() },
         ],
       },
-      include: {
+      select: {
+        coachInvitationId: true,
+        email: true,
+        status: true,
+        purpose: true,
+        athleteIds: true,
+        createdAt: true,
         athleteUser: {
           select: {
             userId: true,
@@ -444,10 +852,12 @@ export class CoachInvitationService {
         createdAt: 'desc',
       },
     });
+    return this.withAthleteNames(invitations);
   }
 
   async getSentInvitationsForAthlete(athleteUserId: number) {
-    return await this.prisma.coachInvitation.findMany({
+    await this.invitationPolicy.assertCanIssueInvitations(athleteUserId);
+    const invitations = await this.prisma.coachInvitation.findMany({
       where: {
         athleteUserId: athleteUserId,
         status: InvitationStatus.PENDING,
@@ -455,7 +865,19 @@ export class CoachInvitationService {
       orderBy: {
         createdAt: 'desc',
       },
+      select: {
+        coachInvitationId: true,
+        email: true,
+        token: true,
+        purpose: true,
+        athleteIds: true,
+        athleteUserId: true,
+        coachUserId: true,
+        status: true,
+        createdAt: true,
+      },
     });
+    return this.withAthleteNames(invitations);
   }
 
   async cancelInvitationByAthlete(athleteUserId: number, invitationId: number) {

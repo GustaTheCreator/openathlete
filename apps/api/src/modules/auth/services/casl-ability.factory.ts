@@ -12,6 +12,7 @@ import {
   Cycle,
   Event,
   User,
+  UserRole,
   Workout,
 } from '@openathlete/database';
 
@@ -62,7 +63,7 @@ export class CaslAbilityFactory {
       });
     }
 
-    if (user.coachAthletes) {
+    if (user.roles?.includes(UserRole.COACH) && user.coachAthletes) {
       user.coachAthletes.forEach((coachAthlete) => {
         can('manage', 'Athlete', { athleteId: coachAthlete.athleteId });
         can('manage', 'AthleteMetric', {

@@ -15,6 +15,8 @@ export const routes = {
     refreshToken: '/auth/refresh-token',
     logout: '/auth/logout',
     verifyInvitation: '/auth/invitation',
+    acceptInvitation: '/auth/invitations/accept',
+    rejectInvitation: '/auth/invitations/reject',
   },
   user: {
     getMe: '/user/me',
@@ -173,6 +175,7 @@ export const routes = {
     updateAthleteSettings: (athleteId: number) =>
       `/athlete/${athleteId}/settings`,
     getPendingInvitations: '/athlete/invitations/pending',
+    createInvitationLink: '/athlete/invitations/links',
     getSentAthleteInvitations: '/athlete/invitations/athletes/sent',
     cancelAthleteInvitation: (invitationId: number) =>
       `/athlete/invitations/athletes/${invitationId}`,
@@ -183,6 +186,15 @@ export const routes = {
       `/athlete/invitations/${invitationId}/accept`,
     rejectInvitation: (invitationId: number) =>
       `/athlete/invitations/${invitationId}/reject`,
+  },
+  admin: {
+    users: '/admin/users',
+    userRoles: (userId: number) => `/admin/users/${userId}/roles`,
+    coachAthletes: '/admin/coach-athletes',
+    coachAthlete: (id: number) => `/admin/coach-athletes/${id}`,
+    invitations: '/admin/invitations',
+    invitation: (kind: string, id: number) =>
+      `/admin/invitations/${kind}/${id}`,
   },
   statistics: {
     filters: '/statistics/filters',
@@ -202,6 +214,7 @@ export const routes = {
     dashboard: (start?: string, end?: string) =>
       `/coach/dashboard${start && end ? `?start=${start}&end=${end}` : ''}`,
     getPendingInvitations: '/coach/invitations/pending',
+    inviteRoster: '/coach/roster-invitations',
     acceptInvitation: (invitationId: number) =>
       `/coach/invitations/${invitationId}/accept`,
     rejectInvitation: (invitationId: number) =>

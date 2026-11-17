@@ -1,9 +1,15 @@
+import { useUserRoles } from '@/contexts/auth';
 import { getPath } from '@/routes/paths';
-import { CURRENT_SPACE, getItem, setItem } from '@/utils/local-storage';
-import { useCallback, useMemo, useState } from 'react';
+import {
+  CURRENT_SPACE,
+  getItem,
+  removeItem,
+  setItem,
+} from '@/utils/local-storage';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { UserRole } from '@openathlete/shared';
+import { SportRole, getSportsRoles } from '@openathlete/shared';
 
 import { SpaceContextType } from '../types';
 import { SpaceContext } from './space-context';
@@ -13,14 +19,39 @@ type Props = {
 };
 
 export function SpaceProvider({ children }: Props) {
-  const [currentSpace, setCurrentSpace] = useState<UserRole>(() => {
-    const storedSpace = getItem(CURRENT_SPACE);
-    return storedSpace ? (storedSpace as UserRole) : 'ATHLETE';
-  });
+  const roles = useUserRoles();
+  const sportsRoles = useMemo(() => getSportsRoles(roles ?? []), [roles]);
+  const [currentSpace, setCurrentSpace] = useState<SportRole | 'SUPER_ADMIN'>(
+    () => {
+      const storedSpace = getItem(CURRENT_SPACE);
+      return sportsRoles.includes(storedSpace as SportRole)
+        ? (storedSpace as SportRole)
+        : (sportsRoles[0] ??
+            (roles?.includes('SUPER_ADMIN') ? 'SUPER_ADMIN' : 'ATHLETE'));
+    },
+  );
   const nav = useNavigate();
 
+  useEffect(() => {
+    if (!roles) return;
+    const storedSpace = getItem(CURRENT_SPACE);
+    const nextSpace: SportRole | 'SUPER_ADMIN' = sportsRoles.includes(
+      storedSpace as SportRole,
+    )
+      ? (storedSpace as SportRole)
+      : (sportsRoles[0] ??
+        (roles.includes('SUPER_ADMIN') ? 'SUPER_ADMIN' : 'ATHLETE'));
+    setCurrentSpace(nextSpace);
+    if (sportsRoles.length === 0 && roles.includes('SUPER_ADMIN')) {
+      removeItem(CURRENT_SPACE);
+    } else if (nextSpace !== storedSpace) {
+      setItem(CURRENT_SPACE, nextSpace);
+    }
+  }, [roles, sportsRoles]);
+
   const handleSpaceChange = useCallback(
-    (space: UserRole) => {
+    (space: SportRole) => {
+      if (!sportsRoles.includes(space)) return;
       setCurrentSpace(space);
       setItem(CURRENT_SPACE, space);
       if (space === 'COACH') {
@@ -29,7 +60,7 @@ export function SpaceProvider({ children }: Props) {
         nav(getPath(['dashboard', 'calendar']));
       }
     },
-    [nav],
+    [nav, sportsRoles],
   );
 
   const memoizedValue = useMemo<SpaceContextType>(
@@ -39,6 +70,8 @@ export function SpaceProvider({ children }: Props) {
     }),
     [currentSpace, handleSpaceChange],
   );
+
+  if (!roles) return null;
 
   return (
     <SpaceContext.Provider value={memoizedValue}>

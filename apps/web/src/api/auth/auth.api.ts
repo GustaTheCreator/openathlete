@@ -5,6 +5,8 @@ import {
   AuthResponseDto,
   EmailLanguage,
   FirebaseLoginDto,
+  InvitationPreviewDto,
+  InvitationTokenDto,
   LoginDto,
   OidcExchangeDto,
 } from '@openathlete/shared';
@@ -64,13 +66,18 @@ export class AuthAPI {
     return `${getApiBaseUrl()}${routes.auth.oidc}?${query}`;
   }
 
-  static async verifyInvitation(token: string): Promise<{
-    valid: boolean;
-    email?: string;
-  }> {
+  static async verifyInvitation(token: string): Promise<InvitationPreviewDto> {
     const res = await client.get(routes.auth.verifyInvitation, {
       params: { token },
     });
     return res.data;
+  }
+
+  static async acceptInvitation(body: InvitationTokenDto): Promise<void> {
+    await client.post(routes.auth.acceptInvitation, body);
+  }
+
+  static async rejectInvitation(body: InvitationTokenDto): Promise<void> {
+    await client.post(routes.auth.rejectInvitation, body);
   }
 }

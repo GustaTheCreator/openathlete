@@ -11,6 +11,8 @@ export const createAccountDtoSchema = z.object({
   lastName: personNameSchema,
   invitationToken: z.string().optional(),
   coachInvitationToken: z.string().optional(),
+  /** Required to claim an invitation with no recipient email. */
+  acceptInvitation: z.boolean().optional(),
   /** Language the app is shown in, saved on the new account for its emails */
   language: emailLanguageSchema.optional(),
   /** Asked for news about the project, Supporter included (unticked by default) */

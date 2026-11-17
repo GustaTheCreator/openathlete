@@ -5,6 +5,7 @@ export * from './refresh-token.dto';
 export * from './analytics-consent.dto';
 export * from './complete-onboarding.dto';
 export * from './create-account.dto';
+export * from './invitation.dto';
 export * from './update-account.dto';
 export * from './password-reset.dto';
 export * from './create-event-template.dto';

@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
-import { UserRole } from '@openathlete/database';
+import { CoachInvitationPurpose, UserRole } from '@openathlete/database';
 import { ApiEnvSchemaType } from '@openathlete/shared';
 
 import { CaslAbilityFactory } from 'src/modules/auth';
@@ -41,7 +41,9 @@ describe('invitation links (PostgreSQL)', () => {
       { emit: jest.fn() } as unknown as EventEmitter2,
       {
         checkAthleteLimit: jest.fn().mockResolvedValue(true),
+        getMaxAthletes: jest.fn().mockResolvedValue(null),
       } as unknown as FeatureAccessService,
+      { assertCanIssueInvitations: jest.fn() } as never,
     ] as const;
     coachInvitations = new CoachInvitationService(...deps);
     athleteInvitations = new AthleteInvitationService(...deps);
@@ -108,18 +110,65 @@ describe('invitation links (PostgreSQL)', () => {
       ).toContain(first);
     });
 
+    it('does not grant COLLEAGUE roles to an account without an athlete profile', async () => {
+      const recipient = await prisma.user.create({
+        data: {
+          email: 'coach-without-athlete@example.com',
+          password: 'hash',
+          firstName: 'Coach',
+          lastName: 'Without Athlete',
+          roles: [UserRole.COACH],
+        },
+      });
+      const invitation = await prisma.coachInvitation.create({
+        data: {
+          email: recipient.email,
+          coachUserId: recipient.userId,
+          athleteUserId: DELETED_USER_ID,
+          purpose: CoachInvitationPurpose.COLLEAGUE,
+        },
+      });
+
+      await expect(
+        coachInvitations.acceptInvitation(
+          recipient.userId,
+          invitation.coachInvitationId,
+        ),
+      ).rejects.toThrow('Athlete profile not found');
+      await expect(
+        prisma.user.findUniqueOrThrow({
+          where: { userId: recipient.userId },
+          select: { roles: true },
+        }),
+      ).resolves.toMatchObject({ roles: [UserRole.COACH] });
+      await expect(
+        prisma.coachInvitation.findUniqueOrThrow({
+          where: { coachInvitationId: invitation.coachInvitationId },
+          select: { status: true },
+        }),
+      ).resolves.toMatchObject({ status: 'PENDING' });
+    });
+
     it('lets only one of two simultaneous sign-ups in', async () => {
-      const [a, b] = [
-        await signUp('a@example.com'),
-        await signUp('b@example.com'),
-      ];
+      const invitedUserId = await signUp('new-coach@example.com');
       const results = await Promise.allSettled([
-        coachInvitations.consumeInvitation('coach-link', a),
-        coachInvitations.consumeInvitation('coach-link', b),
+        coachInvitations.consumeInvitation('coach-link', invitedUserId),
+        coachInvitations.consumeInvitation('coach-link', invitedUserId),
       ]);
+      if (!results.some((result) => result.status === 'fulfilled')) {
+        throw new Error(
+          results
+            .map((result) =>
+              result.status === 'rejected'
+                ? String(result.reason)
+                : 'fulfilled',
+            )
+            .join('; '),
+        );
+      }
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-      const joined = (await coachesOf(DELETED_ATHLETE_ID)).filter((link) =>
-        [a, b].includes(link.userId),
+      const joined = (await coachesOf(DELETED_ATHLETE_ID)).filter(
+        (link) => link.userId === invitedUserId,
       );
       expect(joined).toHaveLength(1);
     });

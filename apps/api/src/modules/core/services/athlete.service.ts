@@ -178,12 +178,30 @@ export class AthleteService {
     });
   }
 
-  async inviteCoach(userId: AuthUser['userId'], email: string) {
-    await this.coachInvitationService.createInvitation(userId, email);
+  async inviteCoach(
+    userId: AuthUser['userId'],
+    email: string,
+    actorUserId = userId,
+    purpose?: 'PERSONAL' | 'COLLEAGUE',
+  ) {
+    await this.coachInvitationService.createInvitation(
+      userId,
+      email,
+      actorUserId,
+      { purpose },
+    );
   }
 
-  async inviteAthlete(userId: AuthUser['userId'], email: string) {
-    await this.athleteInvitationService.createInvitation(userId, email);
+  async inviteAthlete(
+    userId: AuthUser['userId'],
+    email: string,
+    actorUserId = userId,
+  ) {
+    await this.athleteInvitationService.createInvitation(
+      userId,
+      email,
+      actorUserId,
+    );
   }
 
   async getSentAthleteInvitations(userId: AuthUser['userId']) {

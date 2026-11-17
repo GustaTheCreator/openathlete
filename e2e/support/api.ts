@@ -60,13 +60,29 @@ async function createUser(
     data: { email, password, firstName, lastName },
   });
   expect(signup.status(), await signup.text()).toBe(201);
+  const { userId } = (await signup.json()) as { userId: number };
 
-  const { accessToken, refreshToken } = await login(
-    request,
-    email,
-    password,
-    ip,
-  );
+  let { accessToken, refreshToken } = await login(request, email, password, ip);
+
+  if (roles.includes('COACH')) {
+    const adminEmail = process.env.E2E_ADMIN_EMAIL;
+    const adminPassword = process.env.E2E_ADMIN_PASSWORD;
+    if (!adminEmail || !adminPassword) {
+      throw new Error(
+        'Coach E2E fixtures require the isolated local E2E stack',
+      );
+    }
+    const admin = await login(request, adminEmail, adminPassword, ip);
+    const assigned = await request.patch(
+      `${API_URL}/admin/users/${userId}/roles`,
+      {
+        headers: apiHeaders(ip, admin.accessToken),
+        data: { roles: ['ATHLETE', 'COACH'] },
+      },
+    );
+    expect(assigned.status(), await assigned.text()).toBe(200);
+    ({ accessToken, refreshToken } = await login(request, email, password, ip));
+  }
 
   const onboarding = await request.post(`${API_URL}/user/complete-onboarding`, {
     headers: apiHeaders(ip, accessToken),

@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
@@ -38,6 +39,7 @@ function setup(
         .mockResolvedValueOnce({ ...inviter, roles, onboardingCompleted })
         .mockResolvedValueOnce(null),
     },
+    athlete: { findUnique: jest.fn().mockResolvedValue({ athleteId: 1 }) },
     athleteInvitation: invitations,
     coachInvitation: invitations,
   } as unknown as PrismaService;
@@ -49,6 +51,16 @@ function setup(
     config,
     emitter as unknown as EventEmitter2,
     {} as FeatureAccessService,
+    {
+      assertCanIssueInvitations: jest.fn(async () => {
+        if (!roles.includes(UserRole.COACH)) {
+          throw new ForbiddenException('Only coaches can send invitations');
+        }
+        if (!onboardingCompleted) {
+          throw new ForbiddenException('Complete onboarding before inviting');
+        }
+      }),
+    } as never,
   ] as const;
   const email = () => {
     const [slug, event] = emitter.emit.mock.calls[0] as [
@@ -95,7 +107,7 @@ describe('invitation creation requires the persisted COACH role', () => {
 
     await expect(
       athleteSetup.athleteInvitations.createInvitation(1, 'new@example.com'),
-    ).rejects.toThrow('Only coaches can invite athletes');
+    ).rejects.toThrow('Only coaches can send invitations');
 
     const coachSetup = setup([UserRole.ATHLETE]);
     await expect(

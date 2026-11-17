@@ -1,6 +1,7 @@
 enum UserRole {
   ATHLETE
   COACH
+  SUPER_ADMIN
 
   @@map("user_role")
 }
@@ -135,6 +136,15 @@ enum InvitationStatus {
   REJECTED
 
   @@map("invitation_status")
+}
+
+enum CoachInvitationPurpose {
+  PERSONAL
+  COLLEAGUE
+  SHARE
+  TRANSFER
+
+  @@map("coach_invitation_purpose")
 }
 
 enum RecordType {

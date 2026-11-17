@@ -9,6 +9,9 @@ export function DashboardView() {
   if (space === 'COACH') {
     return <Navigate to="/dashboard/coach" replace />;
   }
+  if (space === 'SUPER_ADMIN') {
+    return <Navigate to="/dashboard/admin" replace />;
+  }
 
   return (
     <Navigate

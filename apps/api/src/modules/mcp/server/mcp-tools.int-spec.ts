@@ -3,6 +3,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
+import { UserRole } from '@openathlete/database';
 import { McpScope } from '@openathlete/shared';
 
 import { CaslAbilityFactory } from 'src/modules/auth';
@@ -52,6 +53,7 @@ describe('MCP tools (PostgreSQL)', () => {
   const athlete = {
     userId: DELETED_USER_ID,
     email: 'athlete@example.com',
+    roles: [UserRole.ATHLETE],
     athlete: { athleteId: DELETED_ATHLETE_ID },
     coachAthletes: [{ athleteId: COACH_ATHLETE_ID }],
   } as AuthUser;
@@ -330,6 +332,7 @@ describe('MCP tools (PostgreSQL)', () => {
     const coach = {
       userId: COACH_USER_ID,
       email: 'coach@example.com',
+      roles: [UserRole.COACH],
       athlete: { athleteId: COACH_ATHLETE_ID },
       coachAthletes: [{ athleteId: DELETED_ATHLETE_ID }],
     } as AuthUser;
@@ -401,6 +404,22 @@ describe('MCP tools (PostgreSQL)', () => {
         await call('update_training_zone', { zoneId: 2203, min: 1, max: 2 }),
       ),
     ).toContain('not found');
+  });
+
+  it('does not grant MCP coach access from stale links without the COACH role', async () => {
+    const { call } = await connect(athlete);
+    const before = await prisma.event.count();
+    expect(
+      errorOf(
+        await call('plan_sessions', {
+          athleteId: COACH_ATHLETE_ID,
+          sessions: [
+            { date: '2026-10-27', name: 'Unauthorized', sport: 'RUNNING' },
+          ],
+        }),
+      ),
+    ).toContain('not allowed');
+    expect(await prisma.event.count()).toBe(before);
   });
 
   it('keeps history: done sessions and activities are not deleted', async () => {

@@ -1,3 +1,5 @@
+import { UserRole } from '@openathlete/database';
+
 import { CaslAbilityFactory } from 'src/modules/auth';
 import { AuthUser } from 'src/modules/auth/decorators/user.decorator';
 import {
@@ -27,6 +29,7 @@ describe('coach dashboard (PostgreSQL)', () => {
   const coach = {
     userId: COACH_USER_ID,
     email: 'coach@example.com',
+    roles: [UserRole.COACH],
     athlete: { athleteId: COACH_ATHLETE_ID },
     coachAthletes: [{ userId: COACH_USER_ID, athleteId: DELETED_ATHLETE_ID }],
   } as unknown as AuthUser;

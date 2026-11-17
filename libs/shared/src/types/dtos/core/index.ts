@@ -10,6 +10,7 @@ export * from './update-event-template.dto';
 export * from './create-event-template-folder.dto';
 export * from './update-event-template-folder.dto';
 export * from './invite-coach.dto';
+export * from './roster-invitation.dto';
 export * from './invite-athlete.dto';
 export * from './coach-dashboard.dto';
 export * from './equipment.dto';

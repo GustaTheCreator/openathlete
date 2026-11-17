@@ -10,6 +10,7 @@ import { usePushPermission } from '@/hooks/use-push-permission';
 import { m } from '@/paraglide/messages';
 import { getLocale } from '@/paraglide/runtime';
 import { getPath } from '@/routes/paths';
+import { sportsRoleIdentityLabel } from '@/utils/label-map/core/user-role.label-map';
 import { SUPPORTED_LOCALES, getLocaleName } from '@/utils/locales';
 import {
   SETTINGS_TAB_ICONS,
@@ -28,7 +29,7 @@ import { useTheme } from 'next-themes';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { UserRole } from '@openathlete/shared';
+import { SportRole, getSportsRoles } from '@openathlete/shared';
 
 const Group = ({
   title,
@@ -128,6 +129,8 @@ function NotificationsRow() {
 function MeScreen() {
   const { user, logout } = useAuthContext();
   const roles = useUserRoles();
+  const sportsRoles = getSportsRoles(roles ?? []);
+  const sportsRoleIdentity = sportsRoleIdentityLabel(roles);
   const { space, setSpace } = useSpaceContext();
   const { trainingTabs, appTabs, tabLabels } = useSettingsTabs();
   const { syncLanguage } = useLanguageSync();
@@ -152,6 +155,11 @@ function MeScreen() {
           <span className="block truncate text-lg font-semibold tracking-tight">
             {user.firstName} {user.lastName}
           </span>
+          {sportsRoleIdentity && (
+            <span className="block truncate text-sm text-muted-foreground">
+              {sportsRoleIdentity}
+            </span>
+          )}
           <span className="block text-sm text-muted-foreground">
             {m.me_edit_profile()}
           </span>
@@ -159,10 +167,10 @@ function MeScreen() {
         <ChevronRight className="size-4 shrink-0 text-muted-foreground/60" />
       </Link>
 
-      {(roles?.length ?? 0) > 1 && (
-        <Tabs value={space} onValueChange={(v) => setSpace(v as UserRole)}>
+      {sportsRoles.length > 1 && (
+        <Tabs value={space} onValueChange={(v) => setSpace(v as SportRole)}>
           <TabsList className="h-11 w-full">
-            {roles?.map((role) => (
+            {sportsRoles.map((role) => (
               <TabsTrigger key={role} value={role} className="h-9">
                 {role === 'COACH' ? m.coach() : m.athlete()}
               </TabsTrigger>

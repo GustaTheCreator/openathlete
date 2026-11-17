@@ -1,5 +1,10 @@
 import { Button } from '@/components/ui/button';
 import { m } from '@/paraglide/messages';
+import {
+  InvitationPurpose,
+  invitationPurposeLabel,
+  openInvitationLabel,
+} from '@/utils/invitations';
 
 import {
   SettingsPanel,
@@ -8,7 +13,13 @@ import {
   SettingsSection,
 } from './settings-section';
 
-type SentInvitation = { id: number; email: string; createdAt: string | Date };
+type SentInvitation = {
+  id: number;
+  email: string | null;
+  createdAt: string | Date;
+  purpose?: InvitationPurpose;
+  athleteNames?: string[];
+};
 
 const formatDate = (date: string | Date) =>
   new Date(date).toLocaleDateString(undefined, {
@@ -45,8 +56,16 @@ export function SentInvitationsSection({
             <SettingsRow
               key={invitation.id}
               stacked
-              title={invitation.email}
-              description={formatDate(invitation.createdAt)}
+              title={invitation.email || openInvitationLabel()}
+              description={[
+                formatDate(invitation.createdAt),
+                invitation.purpose &&
+                  invitationPurposeLabel(invitation.purpose),
+                invitation.athleteNames?.length &&
+                  invitation.athleteNames.join(', '),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             >
               <Button
                 variant="outline"

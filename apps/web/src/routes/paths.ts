@@ -22,6 +22,7 @@ export const paths: Paths = {
     root: ROOTS.AUTH,
     login: `${ROOTS.AUTH}/login`,
     createAccount: `${ROOTS.AUTH}/create-account`,
+    invitation: `${ROOTS.AUTH}/invitation`,
     oauth: `${ROOTS.AUTH}/callback/:provider`,
     passwordReset: `${ROOTS.AUTH}/password-reset`,
     passwordResetRequest: `${ROOTS.AUTH}/password-reset-request`,
@@ -39,6 +40,7 @@ export const paths: Paths = {
   dashboard: {
     root: ROOTS.DASHBOARD,
     onboarding: `${ROOTS.DASHBOARD}/onboarding`,
+    admin: `${ROOTS.DASHBOARD}/admin`,
     coach: `${ROOTS.DASHBOARD}/coach`,
     // The first tab of the app on a phone
     today: `${ROOTS.DASHBOARD}/today`,

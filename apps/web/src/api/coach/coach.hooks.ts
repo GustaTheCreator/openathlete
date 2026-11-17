@@ -13,6 +13,26 @@ import { CoachDashboardResponseDto } from '@openathlete/shared';
 import { CoachAPI } from './coach.api';
 import { coachKeys } from './coach.keys';
 
+export const useInviteRosterMutation = (
+  opt?: MutationOptions<
+    Awaited<ReturnType<typeof CoachAPI.inviteRoster>>,
+    Error,
+    Parameters<typeof CoachAPI.inviteRoster>[0]
+  >,
+) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    ...opt,
+    mutationFn: CoachAPI.inviteRoster,
+    onSuccess: (data, variables, onMutateResult, context) => {
+      opt?.onSuccess?.(data, variables, onMutateResult, context);
+      queryClient.invalidateQueries({
+        queryKey: [athleteKeys.getSentCoachInvitations],
+      });
+    },
+  });
+};
+
 export function useCoachDashboardQuery(
   start?: Date,
   end?: Date,

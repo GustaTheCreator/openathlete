@@ -27,6 +27,7 @@ export interface WahooPlanInterval {
 export interface WahooPlan {
   header: {
     name: string;
+    description: string;
     version: '1.0.0';
     workout_type_family: 0;
     workout_type_location: 0 | 1;
@@ -59,43 +60,63 @@ function mapTarget(
   sport: SportType,
   context: SuuntoGuideContext,
 ): WahooPlanTarget[] {
-  const source = step.targets?.[0];
-  if (!source || source.targetType === WORKOUT_TARGET_TYPE.OPEN) return [];
-  const mapped = mapTargetToSuunto(source, sport, context).field;
-  if (!mapped) {
-    throw new Error(
-      `Wahoo cannot represent workout target ${source.targetType}${source.metricType ? ` (${source.metricType})` : ''}`,
-    );
-  }
-  const values = mapped as { value?: number; min?: number; max?: number };
-  const low = values.min ?? values.value ?? values.max;
-  const high = values.max ?? values.value ?? values.min;
-  if (
-    low === undefined ||
-    high === undefined ||
-    !Number.isFinite(low) ||
-    !Number.isFinite(high) ||
-    low < 0 ||
-    high < low
-  ) {
-    throw new Error(`Wahoo target ${mapped.type} has no valid absolute range`);
-  }
-  switch (mapped.type) {
-    case 'targetPower':
-      return [{ type: 'watts', low: Math.round(low), high: Math.round(high) }];
-    case 'targetHeartRate':
-      return [{ type: 'hr', low: Math.round(low), high: Math.round(high) }];
-    case 'targetCadence':
-      return [
-        { type: 'rpm', low: Math.round(low * 60), high: Math.round(high * 60) },
-      ];
-    case 'targetSpeed':
-      return [{ type: 'speed', low, high }];
-    default:
-      throw new Error(
-        `Wahoo cannot represent ${mapped.type} targets on a cycling workout`,
-      );
-  }
+  return (step.targets ?? [])
+    .filter((source) => source.targetType !== WORKOUT_TARGET_TYPE.OPEN)
+    .flatMap<WahooPlanTarget>((source) => {
+      const mapped = mapTargetToSuunto(source, sport, context).field;
+      if (!mapped) {
+        throw new Error(
+          `Wahoo cannot represent workout target ${source.targetType}${source.metricType ? ` (${source.metricType})` : ''}`,
+        );
+      }
+      const values = mapped as { value?: number; min?: number; max?: number };
+      const low = values.min ?? values.value ?? values.max;
+      const high = values.max ?? values.value ?? values.min;
+      if (
+        low === undefined ||
+        high === undefined ||
+        !Number.isFinite(low) ||
+        !Number.isFinite(high) ||
+        low < 0 ||
+        high < low
+      ) {
+        throw new Error(
+          `Wahoo target ${mapped.type} has no valid absolute range`,
+        );
+      }
+      switch (mapped.type) {
+        case 'targetPower':
+          return [
+            {
+              type: 'watts' as const,
+              low: Math.round(low),
+              high: Math.round(high),
+            },
+          ];
+        case 'targetHeartRate':
+          return [
+            {
+              type: 'hr' as const,
+              low: Math.round(low),
+              high: Math.round(high),
+            },
+          ];
+        case 'targetCadence':
+          return [
+            {
+              type: 'rpm' as const,
+              low: Math.round(low * 60),
+              high: Math.round(high * 60),
+            },
+          ];
+        case 'targetSpeed':
+          return [{ type: 'speed' as const, low, high }];
+        default:
+          throw new Error(
+            `Wahoo cannot represent ${mapped.type} targets on a cycling workout`,
+          );
+      }
+    });
 }
 
 function mapStep(
@@ -127,12 +148,17 @@ function mapStep(
     .filter(Boolean)
     .join(' — ')
     .slice(0, 64);
+  const targets = mapTarget(step, sport, context);
+  if (!targets.length)
+    throw new Error(
+      'Wahoo requires an explicit power, heart-rate, cadence or speed target for each interval',
+    );
   return {
     ...(description && { name: description }),
     exit_trigger_type,
     exit_trigger_value: duration,
     intensity_type: intensityType(step),
-    targets: mapTarget(step, sport, context),
+    targets,
   };
 }
 
@@ -143,6 +169,7 @@ export function mapWorkoutDtoToWahooPlan(
   title: string | null,
   indoor: boolean,
   context: SuuntoGuideContext = {},
+  description?: string | null,
 ): WahooPlan {
   const intervals: WahooPlanInterval[] = [];
   for (const step of [...(workout.steps ?? [])].sort(byOrder)) {
@@ -175,6 +202,11 @@ export function mapWorkoutDtoToWahooPlan(
   return {
     header: {
       name: (title?.trim() || 'OpenAthlete workout').slice(0, 100),
+      description: (
+        description?.trim() ||
+        title?.trim() ||
+        'OpenAthlete workout'
+      ).slice(0, 5000),
       version: '1.0.0',
       workout_type_family: 0,
       workout_type_location: indoor ? 0 : 1,
