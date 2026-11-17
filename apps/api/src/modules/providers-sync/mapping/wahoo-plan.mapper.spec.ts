@@ -13,7 +13,13 @@ const step = (orderIndex: number, extra: object = {}) => ({
   stepType: WORKOUT_STEP_TYPE.STEADY,
   durationType: WORKOUT_DURATION_TYPE.TIME,
   durationValue: 60,
-  targets: [],
+  targets: [
+    {
+      targetType: WORKOUT_TARGET_TYPE.POWER,
+      targetMin: 100,
+      targetMax: 100,
+    },
+  ],
   ...extra,
 });
 
@@ -52,6 +58,38 @@ describe('mapWorkoutDtoToWahooPlan', () => {
         { intensity_type: 'recover' },
       ],
     });
+  });
+
+  it('always supplies a nonempty description and preserves trimmed instructions', () => {
+    const dto = { eventTrainingId: 1, steps: [step(0)] } as WorkoutDto;
+    expect(
+      mapWorkoutDtoToWahooPlan(dto, SportType.CYCLING, ' Ride ', false).header
+        .description,
+    ).toBe('Ride');
+    expect(
+      mapWorkoutDtoToWahooPlan(dto, SportType.CYCLING, null, false).header
+        .description,
+    ).toBe('OpenAthlete workout');
+    expect(
+      mapWorkoutDtoToWahooPlan(
+        dto,
+        SportType.CYCLING,
+        null,
+        false,
+        {},
+        '  Coach notes  ',
+      ).header.description,
+    ).toBe('Coach notes');
+    expect(
+      mapWorkoutDtoToWahooPlan(
+        dto,
+        SportType.CYCLING,
+        null,
+        false,
+        {},
+        'x'.repeat(5001),
+      ).header.description,
+    ).toHaveLength(5000);
   });
 
   it('resolves percentage power against the athlete FTP', () => {
@@ -105,5 +143,37 @@ describe('mapWorkoutDtoToWahooPlan', () => {
     expect(() =>
       mapWorkoutDtoToWahooPlan(dto, SportType.CYCLING, null, false),
     ).toThrow(/cannot represent workout target ZONE/);
+  });
+
+  it('rejects open intervals without explicit targets, including repeat children', () => {
+    const dto = {
+      eventTrainingId: 1,
+      steps: [step(0, { targets: [{ targetType: WORKOUT_TARGET_TYPE.OPEN }] })],
+    } as WorkoutDto;
+    expect(() =>
+      mapWorkoutDtoToWahooPlan(dto, SportType.CYCLING, null, false),
+    ).toThrow(/requires an explicit .* target for each interval/);
+
+    const repeated = {
+      eventTrainingId: 1,
+      steps: [
+        {
+          ...step(0, {
+            stepType: WORKOUT_STEP_TYPE.REPEAT,
+            durationType: WORKOUT_DURATION_TYPE.OPEN,
+            durationValue: null,
+          }),
+          repeatBlock: {
+            repetitions: 2,
+            childSteps: [
+              step(0, { targets: [{ targetType: WORKOUT_TARGET_TYPE.OPEN }] }),
+            ],
+          },
+        },
+      ],
+    } as WorkoutDto;
+    expect(() =>
+      mapWorkoutDtoToWahooPlan(repeated, SportType.CYCLING, null, false),
+    ).toThrow(/requires an explicit .* target for each interval/);
   });
 });

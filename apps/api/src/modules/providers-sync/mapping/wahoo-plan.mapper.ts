@@ -27,6 +27,7 @@ export interface WahooPlanInterval {
 export interface WahooPlan {
   header: {
     name: string;
+    description: string;
     version: '1.0.0';
     workout_type_family: 0;
     workout_type_location: 0 | 1;
@@ -127,12 +128,17 @@ function mapStep(
     .filter(Boolean)
     .join(' — ')
     .slice(0, 64);
+  const targets = mapTarget(step, sport, context);
+  if (!targets.length)
+    throw new Error(
+      'Wahoo requires an explicit power, heart-rate, cadence or speed target for each interval',
+    );
   return {
     ...(description && { name: description }),
     exit_trigger_type,
     exit_trigger_value: duration,
     intensity_type: intensityType(step),
-    targets: mapTarget(step, sport, context),
+    targets,
   };
 }
 
@@ -143,6 +149,7 @@ export function mapWorkoutDtoToWahooPlan(
   title: string | null,
   indoor: boolean,
   context: SuuntoGuideContext = {},
+  description?: string | null,
 ): WahooPlan {
   const intervals: WahooPlanInterval[] = [];
   for (const step of [...(workout.steps ?? [])].sort(byOrder)) {
@@ -175,6 +182,11 @@ export function mapWorkoutDtoToWahooPlan(
   return {
     header: {
       name: (title?.trim() || 'OpenAthlete workout').slice(0, 100),
+      description: (
+        description?.trim() ||
+        title?.trim() ||
+        'OpenAthlete workout'
+      ).slice(0, 5000),
       version: '1.0.0',
       workout_type_family: 0,
       workout_type_location: indoor ? 0 : 1,

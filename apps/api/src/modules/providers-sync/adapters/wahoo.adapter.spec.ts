@@ -3,6 +3,7 @@ import {
   SPORT_TYPE,
   WORKOUT_DURATION_TYPE,
   WORKOUT_STEP_TYPE,
+  WORKOUT_TARGET_TYPE,
 } from '@openathlete/shared';
 
 import { PrismaService } from '../../prisma/services/prisma.service';
@@ -32,7 +33,13 @@ describe('WahooAdapter', () => {
         stepType: WORKOUT_STEP_TYPE.STEADY,
         durationType: WORKOUT_DURATION_TYPE.TIME,
         durationValue: 600,
-        targets: [],
+        targets: [
+          {
+            targetType: WORKOUT_TARGET_TYPE.POWER,
+            targetMin: 100,
+            targetMax: 100,
+          },
+        ],
         repeatBlock: null,
       },
     ],
@@ -116,6 +123,28 @@ describe('WahooAdapter', () => {
         'workout[day_code]': expect.any(Number),
       }),
     );
+  });
+
+  it('includes normalized coach instructions in the uploaded plan description', async () => {
+    const { adapter, api } = setup();
+    await adapter.upsertPlannedWorkout({
+      athleteId: 9,
+      workoutId: 12,
+      date: new Date().toISOString().slice(0, 10),
+      normalized: {
+        sport: SPORT_TYPE.CYCLING,
+        steps: [],
+        description: '  Coach instructions  ',
+      },
+    });
+    const call = api.makeApiRequest.mock.calls.find(
+      ([, method, path]) => method === 'POST' && path === '/v1/plans',
+    );
+    const encoded = call?.[3]?.['plan[file]'];
+    const plan = JSON.parse(
+      Buffer.from(String(encoded).split(',')[1] ?? '', 'base64').toString(),
+    );
+    expect(plan.header.description).toBe('Coach instructions');
   });
 
   it('updates owned plan and schedule rather than creating duplicates', async () => {

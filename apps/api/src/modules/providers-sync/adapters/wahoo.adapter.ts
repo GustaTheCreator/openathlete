@@ -157,6 +157,7 @@ export class WahooAdapter implements ProviderAdapter {
         input.normalized.title ?? null,
         input.normalized.sport === SportType.VIRTUAL_RIDE,
         { metrics: metricValues, zones: zones as SuuntoZone[] },
+        input.normalized.description,
       ),
       estimatedSeconds,
     };

@@ -35,3 +35,14 @@ or repairs accounts automatically.
 See [SECURITY.md](../SECURITY.md) for session changes, the remaining tooling advisory and reporting instructions. Before upgrades, back up the database and private configuration and test migrations against an isolated copy. The session migration is additive, but legacy session JWTs are rejected and users must sign in again.
 
 Native mobile publishing is separate from these server containers. Its unresolved CocoaPods/ActiveSupport advisory is documented in [SECURITY.md](../SECURITY.md); no native app binaries are published by this server release.
+
+## Wahoo workout requirements
+
+The Wahoo API currently requires a nonempty plan description and an explicit
+power, heart-rate, cadence or speed target in every non-repeat interval. Coach
+instructions become the description, with the workout title as a fallback.
+Targetless intervals are rejected locally rather than assigning invented
+intensity. Zone and percentage targets need the athlete's corresponding zones
+and reference metrics. Cycling workouts are scheduled from today through six
+days ahead. A successful cloud export does not prove arrival on a physical
+device or import of the completed activity; test those separately.
