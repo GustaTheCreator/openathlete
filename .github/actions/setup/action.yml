@@ -1,6 +1,11 @@
 name: 'Setup environment'
 description: 'Setup Node.js and pnpm, install dependencies and generate build prerequisites'
 
+inputs:
+  translations:
+    description: 'Translation targets: web, website, all, or false'
+    default: web
+
 runs:
   using: 'composite'
   steps:
@@ -25,8 +30,12 @@ runs:
       run: pnpm shared build
       shell: bash
 
-    - name: Generate Paraglide messages
-      run: |
-        pnpm web exec paraglide-js compile --project ./project.inlang --outdir ./src/paraglide
-        pnpm website translate
+    - name: Generate web messages
+      if: inputs.translations == 'web' || inputs.translations == 'all'
+      run: pnpm web exec paraglide-js compile --project ./project.inlang --outdir ./src/paraglide
+      shell: bash
+
+    - name: Generate website messages
+      if: inputs.translations == 'website' || inputs.translations == 'all'
+      run: pnpm website translate
       shell: bash

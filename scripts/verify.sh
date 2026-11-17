@@ -32,7 +32,20 @@ for arg in "$@"; do
 done
 
 LOG_DIR=$(mktemp -d)
-trap 'rm -rf "$LOG_DIR"' EXIT
+DB_CONTAINER=
+E2E_STARTED=false
+cleanup() {
+  local status=$?
+  if $E2E_STARTED; then
+    pnpm e2e stack:down >/dev/null 2>&1 || status=1
+  fi
+  if [[ -n "$DB_CONTAINER" ]]; then
+    docker rm -f "$DB_CONTAINER" >/dev/null 2>&1 || status=1
+  fi
+  rm -rf "$LOG_DIR"
+  exit "$status"
+}
+trap cleanup EXIT
 
 step() {
   local name=$1
@@ -77,16 +90,17 @@ if $INTEGRATION; then
   step start-postgres docker run -d --rm --name "$DB_CONTAINER" \
     -e POSTGRES_USER=oa -e POSTGRES_PASSWORD=oa -e POSTGRES_DB=oa \
     -p 127.0.0.1:15436:5432 pgvector/pgvector:pg17
-  trap 'docker rm -f "$DB_CONTAINER" >/dev/null 2>&1; rm -rf "$LOG_DIR"' EXIT
   step wait-postgres bash -c "until docker exec $DB_CONTAINER pg_isready -U oa -d oa; do sleep 1; done; sleep 2"
   step migrations env DATABASE_URL="$DB_URL" pnpm database run db:deploy
   step integration-tests env INTEGRATION_DATABASE_URL="$DB_URL" pnpm api test:integration
 fi
 
 if $E2E; then
+  E2E_STARTED=true
   step e2e-stack pnpm e2e stack:up
   step e2e-tests pnpm e2e test:e2e
   step e2e-stop pnpm e2e stack:down
+  E2E_STARTED=false
 fi
 
 echo

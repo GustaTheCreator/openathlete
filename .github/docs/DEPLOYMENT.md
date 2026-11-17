@@ -16,7 +16,9 @@ Tourmalet runs the public OpenAthlete fork from `GustaTheCreator/openathlete`. D
 
 ## Checks
 
-GitHub Actions runs lint, type checks, the unit suite in three time zones, database integration tests, documentation checks, end-to-end tests, application builds, deployment tests, and release-helper tests. The stable branch protection should require the single `CI passed` check, which succeeds only when every job succeeds. Before building release images, the tag workflow verifies that a successful `push` CI run exists for the exact commit on `tourmalet`; it does not repeat the full CI run.
+GitHub Actions selects checks conservatively from changed paths. Application changes run lint, type checks, the unit suite in three time zones, database integration tests, production-image end-to-end tests and the AI agent build tests. The standalone docs and marketing website have separate checks. Shared libraries, lockfiles, workflows and unknown paths select everything. See [CI and local feedback](CI.md).
+
+Branch protection should require the single `CI passed` check. It requires successful path classification and every selected check; only deliberately unselected jobs may be skipped. Before promoting release images, the tag workflow requires a successful `push` CI run for the exact commit on `tourmalet` and downloads that run's tested candidate metadata. A PR or manual run cannot supply production candidates.
 
 If an expected PR run is missing, the same CI workflow also supports manual
 dispatch with `gh workflow run ci.yml --ref <branch>`. Check that the run uses
@@ -49,11 +51,13 @@ python -m unittest discover -s deploy -p 'test_*.py' -v
 
    The workflow rejects a tag that does not match `VERSION`, is not annotated, points to another commit, or whose commit is not reachable from `origin/tourmalet`. It also requires a successful `push` CI run for that exact commit on `tourmalet`. Do not move or reuse a release tag. The `tourmalet-v` prefix keeps this workflow separate from the upstream `v*` publisher.
 
-4. After finding the successful stable-branch CI run, GitHub Actions builds and publishes `linux/amd64` API and web images to GHCR, tagged by version and commit SHA. The web image links its footer to the source tree for that exact tag.
-5. A smoke job pulls those exact image digests and runs the end-to-end suite against them, without rebuilding the images. The regular CI end-to-end job also builds its own test images; keeping both checks costs extra runner time but verifies both the usual CI build and the exact published artifacts.
+4. The stable push CI builds the `linux/amd64` API and web candidates, sets their final version/revision labels and source-tag footer, pushes them under unique candidate tags, and runs the full E2E suite against the registry digests. Only after that suite passes does it upload `tourmalet-candidate`. The release validates its version and revision, then adds version/SHA tags to the same digests without rebuilding. Existing tags are accepted only when their digest is identical, allowing a failed promotion to resume without replacing an image.
+5. A short smoke job pulls those exact digests into a fresh stack, runs migrations through normal startup, checks service health, exercises account creation/login and checks the source footer. The full regression has already tested these exact images in the successful stable CI. Reports and traces are retained for CI and release failures/retries.
 6. After smoke passes, the workflow creates the public `tourmalet-release.json` manifest and the AGPL source archive from that tagged commit. It uploads both to a draft GitHub release, then publishes the release. The manifest pins image digests and includes the migration-tree object ID and source-archive SHA-256.
 
 Do not put `.env` files, server configuration, passwords, API keys, SMTP credentials, or other private data in the repository or container image. Release validation uses the built-in GitHub token with `actions: read` and `contents: read`; only image publishing receives `packages: write`, and only release publishing receives `contents: write`.
+
+Candidate metadata is retained for 30 days. Missing/expired metadata fails closed: do not rebuild in the tag workflow or substitute a PR artifact. Re-run the stable **push** CI for that commit before the first promotion, or prepare a new patch version if version/SHA image tags were already promoted. Documentation-only stable commits intentionally have no candidate; include the release's `VERSION` change before tagging. Re-running a build can produce new digests, so never replace already promoted version/SHA tags with the new candidate.
 
 ## Server update and rollback
 

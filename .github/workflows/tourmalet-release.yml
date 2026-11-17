@@ -20,6 +20,8 @@ jobs:
       contents: read
     outputs:
       version: ${{ steps.version.outputs.value }}
+      api-digest: ${{ steps.candidate.outputs.api-digest }}
+      web-digest: ${{ steps.candidate.outputs.web-digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout@v7
         with:
@@ -34,7 +36,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           REVISION: ${{ github.sha }}
         run: |
-          count=$(gh run list \
+          run_id=$(gh run list \
             --repo "$REPOSITORY" \
             --workflow ci.yml \
             --branch tourmalet \
@@ -43,11 +45,15 @@ jobs:
             --status success \
             --limit 1 \
             --json databaseId \
-            --jq length)
-          if [[ "$count" != "1" ]]; then
+            --jq '.[0].databaseId // empty')
+          if [[ -z "$run_id" ]]; then
             echo "No successful CI push run for $REVISION on tourmalet" >&2
             exit 1
           fi
+          gh run download "$run_id" --repo "$REPOSITORY" --name tourmalet-candidate --dir "$RUNNER_TEMP/candidate"
+      - id: candidate
+        name: Validate tested candidate identity
+        run: python scripts/release.py candidate --input "$RUNNER_TEMP/candidate/candidate.json" --revision "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
       - id: version
         name: Read release version
         run: echo "value=$(cat VERSION)" >> "$GITHUB_OUTPUT"
@@ -61,21 +67,19 @@ jobs:
             exit 1
           fi
 
-  build:
-    name: Build and publish Tourmalet images
+  promote:
+    name: Promote tested images without rebuilding
     needs: validate
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    outputs:
-      api-digest: ${{ steps.api.outputs.digest }}
-      web-digest: ${{ steps.web.outputs.digest }}
     env:
       REGISTRY: ghcr.io/gustathecreator
       VERSION: ${{ needs.validate.outputs.version }}
       REVISION: ${{ github.sha }}
-      OCI_SOURCE: https://github.com/GustaTheCreator/openathlete
+      API_DIGEST: ${{ needs.validate.outputs.api-digest }}
+      WEB_DIGEST: ${{ needs.validate.outputs.web-digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout@v7
 
@@ -87,65 +91,41 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Reject reused image version tags
+      - name: Tag exact tested digests
         run: |
-          for image in api web; do
+          for component in api web; do
+            image="$REGISTRY/openathlete-$component"
+            digest="$API_DIGEST"
+            if [[ "$component" == web ]]; then digest="$WEB_DIGEST"; fi
             for tag in "$VERSION" "sha-$REVISION"; do
-              if docker buildx imagetools inspect "$REGISTRY/openathlete-$image:$tag" >/dev/null 2>&1; then
-                echo "Image tag $tag already exists for $image" >&2
-                exit 1
+              if existing=$(docker buildx imagetools inspect "$image:$tag" --format '{{.Manifest.Digest}}' 2>"$RUNNER_TEMP/inspect-error"); then
+                if [[ "$existing" != "$digest" ]]; then
+                  echo "Refusing to replace existing $component:$tag" >&2
+                  exit 1
+                fi
+              else
+                # Network/authentication errors are not evidence that a tag is unused.
+                if ! grep -Fq "$image:$tag: not found" "$RUNNER_TEMP/inspect-error" && ! grep -Fq 'manifest unknown' "$RUNNER_TEMP/inspect-error"; then
+                  echo "Cannot establish whether $component:$tag already exists" >&2
+                  exit 1
+                fi
+                docker buildx imagetools create --prefer-index=false --tag "$image:$tag" "$image@$digest"
               fi
+              actual=$(docker buildx imagetools inspect "$image:$tag" --format '{{.Manifest.Digest}}')
+              test "$actual" = "$digest"
             done
           done
 
-      - id: api
-        name: Build and publish API image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # docker/build-push-action@v7
-        with:
-          context: .
-          file: apps/api/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ghcr.io/gustathecreator/openathlete-api:${{ needs.validate.outputs.version }}
-            ghcr.io/gustathecreator/openathlete-api:sha-${{ github.sha }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/GustaTheCreator/openathlete
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ needs.validate.outputs.version }}
-          cache-from: type=gha,scope=tourmalet-api
-          cache-to: type=gha,mode=max,scope=tourmalet-api
-
-      - id: web
-        name: Build and publish web image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # docker/build-push-action@v7
-        with:
-          context: .
-          file: apps/web/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ghcr.io/gustathecreator/openathlete-web:${{ needs.validate.outputs.version }}
-            ghcr.io/gustathecreator/openathlete-web:sha-${{ github.sha }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/GustaTheCreator/openathlete
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ needs.validate.outputs.version }}
-          build-args: |
-            VITE_SOURCE_CODE_URL=https://github.com/GustaTheCreator/openathlete/tree/${{ github.ref_name }}
-          cache-from: type=gha,scope=tourmalet-web
-          cache-to: type=gha,mode=max,scope=tourmalet-web
-
   smoke:
     name: Smoke test published image digests
-    needs: [validate, build]
+    needs: [validate, promote]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: read
     env:
-      API_IMAGE: ghcr.io/gustathecreator/openathlete-api@${{ needs.build.outputs.api-digest }}
-      WEB_IMAGE: ghcr.io/gustathecreator/openathlete-web@${{ needs.build.outputs.web-digest }}
+      API_IMAGE: ghcr.io/gustathecreator/openathlete-api@${{ needs.validate.outputs.api-digest }}
+      WEB_IMAGE: ghcr.io/gustathecreator/openathlete-web@${{ needs.validate.outputs.web-digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout@v7
 
@@ -155,21 +135,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure the E2E stack to use the published digests
-        run: |
-          cat > "$RUNNER_TEMP/release-smoke.override.yml" <<EOF
-          services:
-            api:
-              image: ${API_IMAGE}
-            worker:
-              image: ${API_IMAGE}
-            web:
-              image: ${WEB_IMAGE}
-          EOF
-
-      - name: Start the release image stack
-        run: docker compose -f e2e/docker-compose.yml -f "$RUNNER_TEMP/release-smoke.override.yml" up -d --no-build --wait
-
       - uses: pnpm/action-setup@f53f5227a9e83886ab598c617f3c170fab62f0d3 # pnpm/action-setup@v6
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # actions/setup-node@v7
         with:
@@ -177,19 +142,40 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile --filter @openathlete/e2e...
       - run: pnpm e2e exec playwright install --with-deps chromium
-      - run: pnpm e2e test:e2e
+      - name: Start the release image stack
+        run: docker compose -f e2e/docker-compose.yml up -d --no-build --wait
+      - name: Smoke test health, login and source identity
+        env:
+          EXPECTED_SOURCE_URL: https://github.com/GustaTheCreator/openathlete/tree/${{ github.ref_name }}
+        run: pnpm e2e test:e2e tests/auth.setup.ts tests/web/release-smoke.spec.ts
 
-      - name: Release image logs
-        if: failure()
-        run: docker compose -f e2e/docker-compose.yml -f "$RUNNER_TEMP/release-smoke.override.yml" logs --no-color api worker web
+      - name: Preserve release diagnostics even after a successful retry
+        if: ${{ !cancelled() }}
+        run: |
+          docker compose -f e2e/docker-compose.yml logs --no-color --timestamps api worker web | python scripts/sanitize_ci_logs.py > e2e/service-logs.txt
+          if [[ -f e2e/playwright-results.json ]]; then
+            jq '{passed: .stats.expected, flaky: .stats.flaky, failed: .stats.unexpected, retries: ([.. | objects | select(has("retry")) | .retry | select(. > 0)] | length)}' e2e/playwright-results.json >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload release Playwright report and traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+            e2e/playwright-results.json
+            e2e/service-logs.txt
+          retention-days: 14
 
       - name: Stop the release image stack
         if: always()
-        run: docker compose -f e2e/docker-compose.yml -f "$RUNNER_TEMP/release-smoke.override.yml" down -v
+        run: docker compose -f e2e/docker-compose.yml down -v
 
   publish-release:
     name: Publish source and release manifest
-    needs: [validate, build, smoke]
+    needs: [validate, promote, smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -215,8 +201,8 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
           REVISION: ${{ github.sha }}
-          API_DIGEST: ${{ needs.build.outputs.api-digest }}
-          WEB_DIGEST: ${{ needs.build.outputs.web-digest }}
+          API_DIGEST: ${{ needs.validate.outputs.api-digest }}
+          WEB_DIGEST: ${{ needs.validate.outputs.web-digest }}
           SOURCE_SHA256: ${{ steps.source.outputs.sha256 }}
         run: |
           python scripts/release.py manifest \

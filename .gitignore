@@ -71,3 +71,5 @@ backups/
 *.key
 __pycache__/
 /.deploy/
+/e2e/playwright*-results.json
+/e2e/service-logs.txt

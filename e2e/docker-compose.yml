@@ -41,7 +41,7 @@ services:
       retries: 20
 
   api:
-    image: openathlete-api:e2e
+    image: ${API_IMAGE:-openathlete-api:e2e}
     build:
       context: ..
       dockerfile: apps/api/Dockerfile
@@ -63,7 +63,7 @@ services:
       fake-oidc: { condition: service_healthy }
 
   worker:
-    image: openathlete-api:e2e
+    image: ${API_IMAGE:-openathlete-api:e2e}
     environment:
       <<: *api-env
       SKIP_MIGRATIONS: 'true'
@@ -98,7 +98,7 @@ services:
       retries: 20
 
   web:
-    image: openathlete-web:e2e
+    image: ${WEB_IMAGE:-openathlete-web:e2e}
     build:
       context: ..
       dockerfile: apps/web/Dockerfile

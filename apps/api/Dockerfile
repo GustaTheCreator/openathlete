@@ -47,6 +47,7 @@ ENV MASTRA_TELEMETRY_DISABLED=1
 RUN apk add --no-cache wget openssl libc6-compat su-exec \
   && corepack enable && corepack prepare pnpm@9.15.9 --activate \
   && npm install -g prisma@6.19.3 \
+  && npm cache clean --force \
   && addgroup -g 1001 -S openathlete \
   && adduser -S openathlete -u 1001 -G openathlete
 

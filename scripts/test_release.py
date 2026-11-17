@@ -5,10 +5,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from release import build_manifest, create_source_archive, validate_release
+from release import build_manifest, create_source_archive, validate_release, validate_candidate
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_candidate_is_bound_to_exact_release(self):
+        candidate = dict(version="1.8.0", revision="a" * 40, api="sha256:" + "b" * 64, web="sha256:" + "c" * 64)
+        self.assertEqual(validate_candidate(candidate, "1.8.0", "a" * 40), candidate)
+        for field, value in [("version", "1.7.0"), ("revision", "d" * 40), ("api", "latest"), ("web", "sha256:bad")]:
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_candidate({**candidate, field: value}, "1.8.0", "a" * 40)
+        with self.assertRaises(ValueError):
+            validate_candidate({}, "1.8.0", "a" * 40)
+
     def test_tag_must_match_version_and_stable_branch_ancestry(self):
         with patch("release.subprocess.run") as run:
             run.side_effect = [
