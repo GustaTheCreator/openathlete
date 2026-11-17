@@ -36,6 +36,7 @@ const MAX_PERSONAL_TOKENS = 20;
 const USER_SELECT = {
   userId: true,
   email: true,
+  roles: true,
   athlete: { select: { athleteId: true } },
   coachAthletes: { select: { athleteId: true } },
 } as const;

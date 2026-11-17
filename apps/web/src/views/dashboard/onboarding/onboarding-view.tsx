@@ -167,10 +167,7 @@ export function OnboardingView() {
   });
   const { data: coaches } = useGetMyCoachesQuery();
   const hasCoach = (coaches?.length ?? 0) > 0;
-  const selectedRoles = useMemo(
-    () => data.roles.filter((role) => availableRoles.includes(role)),
-    [data.roles, availableRoles],
-  );
+  const selectedRoles = useMemo(() => availableRoles, [availableRoles]);
 
   const onboardingFinishedRef = useRef(false);
   const onboardingSnapshotRef = useRef<{
@@ -427,16 +424,8 @@ export function OnboardingView() {
                   <button
                     key={role}
                     type="button"
-                    onClick={() =>
-                      setData((d) => ({
-                        ...d,
-                        roles: selected
-                          ? selectedRoles.filter(
-                              (selectedRole) => selectedRole !== role,
-                            )
-                          : [...selectedRoles, role],
-                      }))
-                    }
+                    disabled
+                    aria-pressed={selected}
                     className={cn(
                       'flex items-center gap-2 sm:gap-3 rounded-lg border-2 p-3 sm:p-4 text-left transition-colors',
                       selected

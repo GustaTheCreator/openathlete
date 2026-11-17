@@ -18,7 +18,10 @@ export function safeReturnPath(value: string | null | undefined) {
   // Resolving against a dummy origin catches encoded tricks like /%2F%2Fhost
   const url = new URL(value, 'https://app.invalid');
   if (url.origin !== 'https://app.invalid') return null;
-  if (url.pathname === '/auth' || url.pathname.startsWith('/auth/')) {
+  if (
+    (url.pathname === '/auth' || url.pathname.startsWith('/auth/')) &&
+    url.pathname !== '/auth/invitation'
+  ) {
     return null;
   }
   return `${url.pathname}${url.search}${url.hash}`;
@@ -29,6 +32,15 @@ export function rememberReturnTo(path: string | null | undefined) {
   if (!safe) return;
   try {
     sessionStorage.setItem(STORAGE_KEY, safe);
+  } catch {
+    // Storage can be blocked: users then land on the dashboard
+  }
+}
+
+/** Removes any destination left by a previous sign-in attempt in this tab. */
+export function clearReturnTo() {
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
   } catch {
     // Storage can be blocked: users then land on the dashboard
   }

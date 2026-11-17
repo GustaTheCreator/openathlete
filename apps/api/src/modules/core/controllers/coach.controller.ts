@@ -1,4 +1,7 @@
+import { ZodValidationPipe } from 'nestjs-zod';
+
 import {
+  Body,
   Controller,
   Get,
   Param,
@@ -17,9 +20,14 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-import { InvitationStatus } from '@openathlete/database';
+import { InvitationStatus, UserRole } from '@openathlete/database';
+import {
+  RosterInvitationDto,
+  rosterInvitationSchema,
+} from '@openathlete/shared';
 
 import { JwtUser, UserTypeGuard } from 'src/modules/auth';
+import { UserTypes } from 'src/modules/auth/decorators/user-type.decorator';
 import { AuthUser } from 'src/modules/auth/decorators/user.decorator';
 import { CoachInvitationService } from 'src/modules/auth/services/coach-invitation.service';
 
@@ -34,6 +42,25 @@ export class CoachController {
   ) {}
 
   @UseGuards(AuthGuard('jwt'), UserTypeGuard)
+  @UserTypes([UserRole.COACH])
+  @ApiBearerAuth()
+  @Post('roster-invitations')
+  createRosterInvitation(
+    @JwtUser() user: AuthUser,
+    @Body(new ZodValidationPipe(rosterInvitationSchema))
+    body: RosterInvitationDto,
+  ) {
+    return this.coachInvitationService.createRosterInvitation(
+      user.userId,
+      body.email,
+      body.operation,
+      body.athleteIds,
+      user.userId,
+    );
+  }
+
+  @UseGuards(AuthGuard('jwt'), UserTypeGuard)
+  @UserTypes([UserRole.COACH])
   @ApiBearerAuth()
   @Get('dashboard')
   @ApiOperation({

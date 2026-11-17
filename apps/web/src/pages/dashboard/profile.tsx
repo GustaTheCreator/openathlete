@@ -28,7 +28,7 @@ import { useTheme } from 'next-themes';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { UserRole } from '@openathlete/shared';
+import { SportRole, getSportsRoles } from '@openathlete/shared';
 
 const Group = ({
   title,
@@ -128,6 +128,7 @@ function NotificationsRow() {
 function MeScreen() {
   const { user, logout } = useAuthContext();
   const roles = useUserRoles();
+  const sportsRoles = getSportsRoles(roles ?? []);
   const { space, setSpace } = useSpaceContext();
   const { trainingTabs, appTabs, tabLabels } = useSettingsTabs();
   const { syncLanguage } = useLanguageSync();
@@ -159,10 +160,10 @@ function MeScreen() {
         <ChevronRight className="size-4 shrink-0 text-muted-foreground/60" />
       </Link>
 
-      {(roles?.length ?? 0) > 1 && (
-        <Tabs value={space} onValueChange={(v) => setSpace(v as UserRole)}>
+      {sportsRoles.length > 1 && (
+        <Tabs value={space} onValueChange={(v) => setSpace(v as SportRole)}>
           <TabsList className="h-11 w-full">
-            {roles?.map((role) => (
+            {sportsRoles.map((role) => (
               <TabsTrigger key={role} value={role} className="h-9">
                 {role === 'COACH' ? m.coach() : m.athlete()}
               </TabsTrigger>

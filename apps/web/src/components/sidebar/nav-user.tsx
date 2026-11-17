@@ -23,13 +23,19 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { useAuthContext } from '@/contexts/auth';
+import { useAuthContext, useUserRoles } from '@/contexts/auth';
 import { useLanguageSync } from '@/hooks/use-language-sync';
 import { m } from '@/paraglide/messages';
 import { getLocale } from '@/paraglide/runtime';
 import { getPath } from '@/routes/paths';
 import { SUPPORTED_LOCALES, getLocaleName } from '@/utils/locales';
-import { ChevronsUpDown, CogIcon, Download, LogOut } from 'lucide-react';
+import {
+  ChevronsUpDown,
+  CogIcon,
+  Download,
+  LogOut,
+  ShieldCheck,
+} from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useNavigate } from 'react-router-dom';
 
@@ -42,6 +48,7 @@ const planNameMap: Record<SubscriptionPlan, string> = {
 
 export function NavUser() {
   const { logout, user } = useAuthContext();
+  const roles = useUserRoles();
   const { data: subscription } = useCurrentSubscription();
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -118,6 +125,16 @@ export function NavUser() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
+              {roles?.includes('SUPER_ADMIN') && (
+                <DropdownMenuItem
+                  onClick={() =>
+                    handleNavigation(getPath(['dashboard', 'admin']))
+                  }
+                >
+                  <ShieldCheck />
+                  {m.admin_users()}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 onClick={() =>
                   handleNavigation(getPath(['dashboard', 'settings']))

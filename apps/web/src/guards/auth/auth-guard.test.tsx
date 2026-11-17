@@ -37,6 +37,11 @@ const tokenOf = (userId: number) =>
 const accounts: Record<string, object> = {
   [tokenOf(1)]: { userId: 1, roles: ['ATHLETE'], onboardingCompleted: true },
   [tokenOf(2)]: { userId: 2, roles: ['ATHLETE'], onboardingCompleted: false },
+  [tokenOf(3)]: {
+    userId: 3,
+    roles: ['SUPER_ADMIN'],
+    onboardingCompleted: false,
+  },
 };
 
 // Like the sidebar's menu
@@ -151,5 +156,39 @@ describe('AuthGuard', () => {
     await click('sign in');
     await at('/dashboard/onboarding');
     await waitUntil(() => expect(container.textContent).toBe('onboarding'));
+  });
+
+  it('allows an admin-only account with incomplete sports onboarding to reach admin', async () => {
+    localStorage.setItem(ACCESS_TOKEN, tokenOf(3));
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/dashboard',
+          element: (
+            <AuthGuard>
+              <Outlet />
+            </AuthGuard>
+          ),
+          children: [
+            { path: '/dashboard/admin', element: <p>admin</p> },
+            { path: '/dashboard/onboarding', element: <p>onboarding</p> },
+          ],
+        },
+      ],
+      { initialEntries: ['/dashboard/admin'] },
+    );
+    await act(async () =>
+      root.render(
+        <AuthProvider>
+          <QueryClientProvider client={queryClient}>
+            <AuthConsumer>
+              <RouterProvider router={router} />
+            </AuthConsumer>
+          </QueryClientProvider>
+        </AuthProvider>,
+      ),
+    );
+    await waitUntil(() => expect(container.textContent).toBe('admin'));
+    expect(router.state.location.pathname).toBe('/dashboard/admin');
   });
 });

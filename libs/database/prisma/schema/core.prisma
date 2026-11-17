@@ -21,7 +21,7 @@ model User {
   password            String
   /// Invalidates credentials issued before a password reset, including concurrent sign-ins.
   sessionVersion      Int          @default(0) @map("session_version")
-  /// User roles: ATHLETE (can have athlete profile), COACH (can coach athletes)
+  /// Sports roles ATHLETE/COACH and the independent SUPER_ADMIN permission.
   roles               UserRole[]
   /// User's first name
   firstName           String       @map("first_name")

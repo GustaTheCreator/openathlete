@@ -5,6 +5,7 @@ import { WEB_URL } from './support/env';
 const isCI = Boolean(process.env.CI);
 
 export default defineConfig({
+  globalSetup: './global-setup.ts',
   testDir: './tests',
   fullyParallel: true,
   forbidOnly: isCI,

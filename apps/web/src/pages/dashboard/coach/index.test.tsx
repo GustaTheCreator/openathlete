@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { SpaceProvider, useSpaceContext } from '@/contexts/space';
 import { CURRENT_SPACE, setItem } from '@/utils/local-storage';
+import { DashboardView } from '@/views/dashboard/dashboard-view';
 import { act } from 'react';
 import { type Root, createRoot } from 'react-dom/client';
 import { Outlet, RouterProvider, createMemoryRouter } from 'react-router-dom';
@@ -10,6 +11,10 @@ import { CoachDashboardPage } from './index';
 
 vi.mock('@/views/dashboard/coach-dashboard-view', () => ({
   CoachDashboardView: () => null,
+}));
+const auth = vi.hoisted(() => ({ roles: ['ATHLETE', 'COACH'] as string[] }));
+vi.mock('@/contexts/auth', () => ({
+  useUserRoles: () => auth.roles,
 }));
 vi.mock('@/paraglide/messages', () => ({
   m: { coach_dashboard: () => 'Coach dashboard' },
@@ -41,6 +46,8 @@ function renderAt(path: string) {
         children: [
           { path: '/dashboard/coach', element: <CoachDashboardPage /> },
           { path: '/dashboard/calendar', element: null },
+          { path: '/dashboard', element: <DashboardView /> },
+          { path: '/dashboard/admin', element: <p>admin</p> },
         ],
       },
     ],
@@ -58,6 +65,7 @@ beforeEach(() => {
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
   localStorage.clear();
+  auth.roles = ['ATHLETE', 'COACH'];
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -87,4 +95,26 @@ it('switches to the coach space when opened from the athlete space', async () =>
   });
 
   expect(currentSpace()).toBe('COACH');
+});
+
+it('rejects a persisted role that is not a sports role grant', async () => {
+  auth.roles = ['ATHLETE'];
+  setItem(CURRENT_SPACE, 'SUPER_ADMIN');
+  await act(async () => renderAt('/dashboard/calendar'));
+
+  expect(currentSpace()).toBe('ATHLETE');
+  expect(localStorage.getItem(CURRENT_SPACE)).toBe('ATHLETE');
+});
+
+it('routes an admin-only account to administration without selecting a sports space', async () => {
+  auth.roles = ['SUPER_ADMIN'];
+  setItem(CURRENT_SPACE, 'ATHLETE');
+  let router!: ReturnType<typeof renderAt>;
+  await act(async () => {
+    router = renderAt('/dashboard');
+  });
+
+  expect(currentSpace()).toBe('SUPER_ADMIN');
+  expect(localStorage.getItem(CURRENT_SPACE)).toBeNull();
+  expect(router.state.location.pathname).toBe('/dashboard/admin');
 });

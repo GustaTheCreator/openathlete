@@ -1,8 +1,13 @@
 import client, { routes } from '@/utils/axios';
 
 import { CoachDashboardResponseDto } from '@openathlete/shared';
+import { RosterInvitationDto } from '@openathlete/shared';
 
 export class CoachAPI {
+  static async inviteRoster(body: RosterInvitationDto): Promise<void> {
+    await client.post(routes.coach.inviteRoster, body);
+  }
+
   static async getDashboard(
     start?: Date,
     end?: Date,
@@ -16,9 +21,16 @@ export class CoachAPI {
   static async getPendingInvitations(): Promise<
     Array<{
       coachInvitationId: number;
-      email: string;
+      email: string | null;
       token: string | null;
       status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+      purpose: 'PERSONAL' | 'COLLEAGUE' | 'SHARE' | 'TRANSFER';
+      athleteIds: number[];
+      athleteNames: {
+        athleteId: number;
+        firstName: string;
+        lastName: string;
+      }[];
       athleteUserId: number;
       coachUserId: number | null;
       athleteUser: {

@@ -18,6 +18,7 @@ import {
   WorkoutSyncListener,
 } from 'src/listeners';
 
+import { AdminModule } from './admin/admin.module';
 import { AgentModule } from './agent/agent.module';
 import { AiModule } from './ai';
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -54,6 +55,7 @@ import { SubscriptionModule } from './subscription';
     }),
     ThrottlerModule.forRoot(DEFAULT_RATE_LIMIT),
     AuthModule,
+    AdminModule,
     CoreModule,
     InstanceModule,
     AgentModule,

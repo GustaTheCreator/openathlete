@@ -1,8 +1,8 @@
 import { m } from '@/paraglide/messages';
 
-import { UserRole } from '@openathlete/shared';
+import { SportRole } from '@openathlete/shared';
 
-export const userRoleLabelMap: Record<UserRole, string> = {
+export const userRoleLabelMap: Record<SportRole, string> = {
   ATHLETE: m.athlete(),
   COACH: m.coach(),
 };

@@ -16,6 +16,7 @@ import { AthleteInvitationService } from './services/athlete-invitation.service'
 import { AuthCookieService } from './services/auth-cookie.service';
 import { CoachInvitationService } from './services/coach-invitation.service';
 import { FirebaseAuthService } from './services/firebase-auth.service';
+import { InvitationPolicyService } from './services/invitation-policy.service';
 import { InvitationService } from './services/invitation.service';
 import { OidcService } from './services/oidc.service';
 import { TokenService } from './services/token.service';
@@ -45,6 +46,7 @@ import { JwtStrategy } from './strategies';
     AthleteInvitationService,
     CoachInvitationService,
     InvitationService,
+    InvitationPolicyService,
     JwtStrategy,
     CaslAbilityFactory,
     UserTypeGuard,
@@ -58,6 +60,7 @@ import { JwtStrategy } from './strategies';
     AthleteInvitationService,
     CoachInvitationService,
     OidcService,
+    InvitationPolicyService,
   ],
 })
 export class AuthModule {}

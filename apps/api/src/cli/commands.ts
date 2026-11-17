@@ -5,6 +5,12 @@ import { AccountDeletionService } from 'src/modules/auth/services/account-deleti
 import { TokenService } from 'src/modules/auth/services/token.service';
 import { PrismaService } from 'src/modules/prisma/services/prisma.service';
 
+import { bootstrapSuperAdmin } from './bootstrap-super-admin';
+import {
+  inspectAthleteCoaches,
+  repairCoachAthleteRole,
+} from './repair-coach-athlete';
+
 export const USAGE = `Usage: openathlete <command>
 
   list-users                  List the accounts of this instance
@@ -13,7 +19,13 @@ export const USAGE = `Usage: openathlete <command>
   delete-users --yes          Same for every email read from the standard input,
                               one per line (for waves of fake sign-ups)
   garmin-backfill             Ask Garmin to resend the last 30 days of activities
-                              of every connected account (the worker imports them)`;
+                              of every connected account (the worker imports them)
+  bootstrap-super-admin <userId> <email> [--apply]
+                              Preview a role grant; --apply performs it
+  repair-coach-athlete-role <userId> <email> [--apply]
+                              Preview adding ATHLETE to a coach-only account
+  inspect-athlete-coaches <userId> <email>
+                              List coaches of the user's own athlete profile`;
 
 export interface CliDeps {
   prisma: PrismaService;
@@ -57,6 +69,128 @@ export async function runCommand(
   };
 
   switch (command) {
+    case 'bootstrap-super-admin': {
+      const id = rest[0];
+      const targetEmail = rest[1];
+      if (
+        !id ||
+        !/^\d+$/.test(id) ||
+        !Number.isSafeInteger(Number(id)) ||
+        Number(id) < 1 ||
+        !targetEmail ||
+        rest.some((arg) => ![id, targetEmail, '--apply'].includes(arg))
+      ) {
+        out(
+          'Usage: openathlete bootstrap-super-admin <userId> <email> [--apply]',
+        );
+        return 1;
+      }
+      try {
+        const result = await bootstrapSuperAdmin(
+          deps.prisma,
+          Number(id),
+          targetEmail,
+          rest.includes('--apply'),
+        );
+        out(`User ${result.userId}: ${result.email}`);
+        out(
+          `Roles: ${result.beforeRoles.join(',') || '(none)'} -> ${result.proposedRoles.join(',')}`,
+        );
+        out(`Athlete profile: ${result.athleteId ?? 'none'} (preserved)`);
+        out(`Side effects: ${result.sideEffects.join(', ') || 'none'}`);
+        out(
+          result.apply
+            ? result.changed
+              ? 'Applied'
+              : 'Already configured'
+            : 'Preview only; add --apply to grant roles',
+        );
+        return 0;
+      } catch (error) {
+        out(error instanceof Error ? error.message : String(error));
+        return 1;
+      }
+    }
+    case 'repair-coach-athlete-role': {
+      const id = rest[0];
+      const targetEmail = rest[1];
+      if (
+        !id ||
+        !/^\d+$/.test(id) ||
+        !Number.isSafeInteger(Number(id)) ||
+        Number(id) < 1 ||
+        !targetEmail ||
+        rest.some((arg) => ![id, targetEmail, '--apply'].includes(arg))
+      ) {
+        out(
+          'Usage: openathlete repair-coach-athlete-role <userId> <email> [--apply]',
+        );
+        return 1;
+      }
+      try {
+        const result = await repairCoachAthleteRole(
+          deps.prisma,
+          Number(id),
+          targetEmail,
+          rest.includes('--apply'),
+        );
+        out(`User ${result.userId}: ${result.email}`);
+        out(
+          `Roles: ${result.beforeRoles.join(',')} -> ${result.proposedRoles.join(',')}`,
+        );
+        out(`Athlete profile: ${result.athleteId ?? 'none'} (preserved)`);
+        out(`Side effects: ${result.sideEffects.join(', ') || 'none'}`);
+        out(
+          result.apply
+            ? result.changed
+              ? 'Applied'
+              : 'Already repaired'
+            : 'Preview only; add --apply to grant ATHLETE',
+        );
+        return 0;
+      } catch (error) {
+        out(error instanceof Error ? error.message : String(error));
+        return 1;
+      }
+    }
+    case 'inspect-athlete-coaches': {
+      const id = rest[0];
+      const targetEmail = rest[1];
+      if (
+        !id ||
+        !/^\d+$/.test(id) ||
+        !Number.isSafeInteger(Number(id)) ||
+        Number(id) < 1 ||
+        !targetEmail ||
+        rest.length !== 2
+      ) {
+        out('Usage: openathlete inspect-athlete-coaches <userId> <email>');
+        return 1;
+      }
+      try {
+        const result = await inspectAthleteCoaches(
+          deps.prisma,
+          Number(id),
+          targetEmail,
+        );
+        out(`User ${result.userId}: ${result.email}`);
+        out(`Athlete profile: ${result.athleteId ?? 'none'}`);
+        out('Coaches of personal athlete profile:');
+        for (const coach of result.coaches) {
+          out(
+            [coach.coachAthleteId, coach.userId, coach.email, coach.name].join(
+              '\t',
+            ),
+          );
+        }
+        if (result.coaches.length === 0) out('(none)');
+        out('Inspection only; no relationship changed.');
+        return 0;
+      } catch (error) {
+        out(error instanceof Error ? error.message : String(error));
+        return 1;
+      }
+    }
     case 'list-users': {
       const users = await deps.prisma.user.findMany({
         select: {

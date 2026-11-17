@@ -15,6 +15,7 @@ import { initErrorMonitoring } from './utils/error-monitoring';
 import { initPwa } from './utils/pwa';
 import { captureSignupAttribution } from './utils/signup-attribution';
 import { initStatusBar } from './utils/status-bar';
+import { captureInvitationTokenFromLocation } from './utils/invitation-token';
 
 if (isCapacitor()) {
   const viewport = document.querySelector('meta[name="viewport"]');
@@ -28,6 +29,8 @@ if (isCapacitor()) {
 
 document.documentElement.lang = getLocale();
 
+// Remove bearer invitation tokens before attribution or analytics can observe the URL.
+captureInvitationTokenFromLocation();
 // Before a redirect drops the query of the first page
 captureSignupAttribution();
 initErrorMonitoring();

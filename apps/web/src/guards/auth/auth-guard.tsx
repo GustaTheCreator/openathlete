@@ -38,8 +38,12 @@ export function AuthGuard({ children }: Props) {
     if (isLoading) return;
 
     if (user) {
+      const isAdminOnly =
+        user.roles?.includes('SUPER_ADMIN') &&
+        !user.roles.some((role) => role === 'ATHLETE' || role === 'COACH');
       if (
         !user.onboardingCompleted &&
+        !isAdminOnly &&
         pathname !== getPath(['dashboard', 'onboarding'])
       ) {
         rememberReturnTo(`${pathname}${search}${hash}`);

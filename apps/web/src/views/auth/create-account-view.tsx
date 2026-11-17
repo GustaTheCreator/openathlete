@@ -8,10 +8,15 @@ import { Button } from '@/components/ui/button';
 import { useAuthContext } from '@/contexts/auth';
 import { m } from '@/paraglide/messages';
 import { getPath } from '@/routes/paths';
+import { takeInvitationTokenForSignup } from '@/utils/invitation-token';
 import { currentLanguage } from '@/utils/language-choice';
 import { localizedNewPasswordSchema } from '@/utils/password';
 import { localizedPersonNameSchema } from '@/utils/person-name';
-import { RETURN_TO_PARAM, rememberReturnTo } from '@/utils/return-to';
+import {
+  RETURN_TO_PARAM,
+  clearReturnTo,
+  rememberReturnTo,
+} from '@/utils/return-to';
 import { cn } from '@/utils/shadcn';
 import { signupRefusal } from '@/utils/signup';
 import { OAuthButtons } from '@/views/auth/oauth-buttons';
@@ -24,7 +29,10 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import z from 'zod';
 
-import { createAccountDtoSchema } from '@openathlete/shared';
+import {
+  InvitationPreviewDto,
+  createAccountDtoSchema,
+} from '@openathlete/shared';
 
 const PLAN_TOKEN_STORAGE_KEY = 'pendingPlanToken';
 
@@ -35,8 +43,14 @@ export function CreateAccountView({ className }: React.ComponentProps<'form'>) {
   const [searchParams] = useSearchParams();
   const invitationToken = searchParams.get('invitation');
   const coachInvitationToken = searchParams.get('coach-invitation');
+  const [pendingInvitationToken] = useState(takeInvitationTokenForSignup);
+  const rawInvitationToken =
+    invitationToken || coachInvitationToken || pendingInvitationToken;
   const planToken = searchParams.get('planToken');
   const [invitationEmail, setInvitationEmail] = useState<string | null>(null);
+  const [invitationPreview, setInvitationPreview] =
+    useState<InvitationPreviewDto | null>(null);
+  const [invitationCheckFailed, setInvitationCheckFailed] = useState(false);
   const [isVerifyingInvitation, setIsVerifyingInvitation] = useState(false);
   const methods = useForm<z.infer<typeof createAccountDtoSchema>>({
     resolver: zodResolver(
@@ -53,6 +67,7 @@ export function CreateAccountView({ className }: React.ComponentProps<'form'>) {
       lastName: '',
       invitationToken: invitationToken || undefined,
       coachInvitationToken: coachInvitationToken || undefined,
+      acceptInvitation: false,
       // Consent to news must be given, never assumed (CNIL)
       emailNews: false,
     },
@@ -68,24 +83,25 @@ export function CreateAccountView({ className }: React.ComponentProps<'form'>) {
   }, [planToken]);
 
   // Followed once onboarding is done
-  useEffect(() => rememberReturnTo(returnTo), [returnTo]);
-
   useEffect(() => {
-    const token = invitationToken || coachInvitationToken;
+    const token = rawInvitationToken;
     if (token) {
       setIsVerifyingInvitation(true);
       AuthAPI.verifyInvitation(token)
         .then((result) => {
+          setInvitationPreview(result);
+          setInvitationCheckFailed(!result.valid);
           if (result.valid && result.email) {
             setInvitationEmail(result.email);
             methods.setValue('email', result.email);
           }
         })
+        .catch(() => setInvitationCheckFailed(true))
         .finally(() => {
           setIsVerifyingInvitation(false);
         });
     }
-  }, [invitationToken, coachInvitationToken, methods]);
+  }, [rawInvitationToken, methods]);
 
   const loginMutation = useLoginMutation({
     onSuccess: async () => {
@@ -97,7 +113,10 @@ export function CreateAccountView({ className }: React.ComponentProps<'form'>) {
   const createAccountMutation = useCreateAccountMutation({
     onSuccess: async (_, variables) => {
       posthog?.capture('user_signed_up');
-      loginMutation.mutate(variables);
+      loginMutation.mutate({
+        email: variables.email,
+        password: variables.password,
+      });
     },
     onError: (error) =>
       toast.error(
@@ -111,21 +130,61 @@ export function CreateAccountView({ className }: React.ComponentProps<'form'>) {
   const signup = instance?.signup ?? 'open';
   // In invite mode, the link of an invitation still opens the form
   const signupBlocked =
-    signup === 'closed' ||
-    (signup === 'invite' && !invitationToken && !coachInvitationToken);
+    signup === 'closed' || (signup === 'invite' && !rawInvitationToken);
 
   const { handleSubmit } = methods;
 
   const onSubmit = handleSubmit(async (data) => {
+    const isOpenInvitation =
+      invitationPreview?.valid === true && invitationPreview.email == null;
+    if (isOpenInvitation && !data.acceptInvitation) {
+      toast.error(m.invitation_accept_required());
+      return;
+    }
+    const isCoachInvitation = invitationPreview?.kind === 'COACH';
+    const inviteToken = rawInvitationToken;
     const submitData = {
       ...data,
-      invitationToken: invitationToken || undefined,
-      coachInvitationToken: coachInvitationToken || undefined,
+      invitationToken: !isCoachInvitation
+        ? inviteToken || undefined
+        : undefined,
+      coachInvitationToken: isCoachInvitation
+        ? inviteToken || undefined
+        : undefined,
+      acceptInvitation: isOpenInvitation ? true : undefined,
       // Emails, starting with the welcome one, follow the app's language
       language: currentLanguage(),
     };
     createAccountMutation.mutate(submitData);
   });
+
+  const invitationTokenValue = rawInvitationToken;
+  const invitationReturnPath = invitationTokenValue
+    ? getPath(['auth', 'invitation'])
+    : undefined;
+  const rosterReturnPath =
+    invitationPreview?.kind === 'COACH' &&
+    (invitationPreview.purpose === 'SHARE' ||
+      invitationPreview.purpose === 'TRANSFER')
+      ? `${getPath(['dashboard', 'settings'])}?tab=invitations`
+      : undefined;
+
+  useEffect(() => {
+    if (returnTo) {
+      rememberReturnTo(returnTo);
+    } else if (rawInvitationToken && rosterReturnPath) {
+      rememberReturnTo(rosterReturnPath);
+    } else if (rawInvitationToken) {
+      clearReturnTo();
+    }
+  }, [returnTo, rawInvitationToken, rosterReturnPath]);
+  const isOpenInvitation =
+    invitationPreview?.valid === true && invitationPreview.email == null;
+  const acceptsOpenInvitation = methods.watch('acceptInvitation');
+  const loginReturnPath = rosterReturnPath ?? invitationReturnPath;
+  const loginUrl = loginReturnPath
+    ? `${getPath(['auth', 'login'])}?returnTo=${encodeURIComponent(loginReturnPath)}`
+    : getPath(['auth', 'login']);
 
   if (signupBlocked) {
     return (
@@ -168,6 +227,31 @@ export function CreateAccountView({ className }: React.ComponentProps<'form'>) {
           {m.verifying_invitation()}
         </p>
       )}
+      {invitationCheckFailed && (
+        <p role="alert" className="text-sm text-destructive">
+          {m.invitation_preview_invalid()}
+        </p>
+      )}
+      {isOpenInvitation && (
+        <div className="space-y-2 rounded-md border p-3">
+          <p className="text-sm">
+            {invitationPreview?.kind === 'COACH' &&
+            invitationPreview.purpose === 'PERSONAL'
+              ? m.invitation_preview_coach_personal()
+              : invitationPreview?.kind === 'COACH' &&
+                  invitationPreview.purpose === 'COLLEAGUE'
+                ? m.invitation_preview_coach_colleague()
+                : invitationPreview?.kind === 'COACH' &&
+                    invitationPreview.purpose === 'TRANSFER'
+                  ? m.invitation_preview_coach_transfer()
+                  : invitationPreview?.kind === 'COACH' &&
+                      invitationPreview.purpose === 'SHARE'
+                    ? m.invitation_preview_coach_share()
+                    : m.invitation_preview_athlete()}
+          </p>
+          <RHFCheckbox name="acceptInvitation" label={m.invitation_accept()} />
+        </div>
+      )}
       <div className="grid gap-6">
         <RHFTextField
           name="firstName"
@@ -207,20 +291,29 @@ export function CreateAccountView({ className }: React.ComponentProps<'form'>) {
           isLoading={
             createAccountMutation.isPending ||
             loginMutation.isPending ||
-            isVerifyingInvitation
+            isVerifyingInvitation ||
+            invitationCheckFailed ||
+            (isOpenInvitation && !acceptsOpenInvitation)
           }
         >
           {m.create_account()}
         </Button>
-        <OAuthButtons
-          invitationToken={invitationToken}
-          coachInvitationToken={coachInvitationToken}
-          redirectTo={getPath(['dashboard'])}
-        />
+        {!rawInvitationToken && (
+          <OAuthButtons
+            redirectTo={rosterReturnPath ?? getPath(['dashboard'])}
+          />
+        )}
+        {rawInvitationToken &&
+          !isVerifyingInvitation &&
+          invitationPreview?.valid && (
+            <p className="text-center text-sm text-muted-foreground">
+              {m.invitation_provider_signup_unavailable()}
+            </p>
+          )}
       </div>
       <div className="text-center text-sm">
         {m.already_have_account()}{' '}
-        <Link to="/auth/login" className="underline underline-offset-4">
+        <Link to={loginUrl} className="underline underline-offset-4">
           {m.login()}
         </Link>
       </div>

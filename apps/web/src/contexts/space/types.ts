@@ -1,6 +1,6 @@
-import { UserRole } from '@openathlete/shared';
+import { SportRole } from '@openathlete/shared';
 
 export type SpaceContextType = {
-  space: UserRole;
-  setSpace: (space: UserRole) => void;
+  space: SportRole | 'SUPER_ADMIN';
+  setSpace: (space: SportRole) => void;
 };

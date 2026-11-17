@@ -5,6 +5,7 @@ import posthog from 'posthog-js';
 import type { User } from '@openathlete/shared';
 
 import { whenConsentGranted } from './consent';
+import { hasInvitationTokenInLocation } from './invitation-token';
 
 const posthogToken = import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN as
   string | undefined;
@@ -20,6 +21,14 @@ const contentsquareTagId = import.meta.env.VITE_CONTENTSQUARE_TAG_ID as
  * silent no-ops.
  */
 export function initAnalytics() {
+  // Invitation routes contain bearer tokens in session storage and should not
+  // start product analytics or recordings for that page.
+  if (
+    window.location.pathname === '/auth/invitation' ||
+    hasInvitationTokenInLocation()
+  ) {
+    return;
+  }
   // Nothing is loaded or sent before the user accepts tracking
   whenConsentGranted(startAnalytics);
 }

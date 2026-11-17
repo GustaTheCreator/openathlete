@@ -1,6 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
+import { UserRole } from '@openathlete/database';
+
 import { CaslAbilityFactory } from 'src/modules/auth';
 import { AuthUser } from 'src/modules/auth/decorators/user.decorator';
 import {
@@ -36,6 +38,7 @@ describe('linking an activity to a session (PostgreSQL)', () => {
   const user = {
     userId: DELETED_USER_ID,
     email: 'athlete@example.com',
+    roles: [UserRole.ATHLETE, UserRole.COACH],
     athlete: { athleteId: DELETED_ATHLETE_ID },
     coachAthletes: [{ athleteId: COACH_ATHLETE_ID }],
   } as unknown as AuthUser;

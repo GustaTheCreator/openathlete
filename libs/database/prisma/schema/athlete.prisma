@@ -12,7 +12,7 @@
 model Athlete {
   garminPersonalConnection GarminPersonalConnection?
   // primary key
-  athleteId Int @id @default(autoincrement()) @map("athlete_id")
+  athleteId                Int                       @id @default(autoincrement()) @map("athlete_id")
 
   // fields
   /// Random token of the athlete's calendar feed URL (iCal). Created on first
@@ -21,8 +21,8 @@ model Athlete {
   calendarFeedToken String? @unique @map("calendar_feed_token")
 
   // relationships
-  user                     User                      @relation(fields: [userId], references: [userId])
-  userId                   Int                       @unique @map("user_id")
+  user                     User                         @relation(fields: [userId], references: [userId])
+  userId                   Int                          @unique @map("user_id")
   coachAthletes            CoachAthlete[]
   events                   Event[]
   trainingZones            TrainingZone[]
@@ -66,6 +66,7 @@ model CoachAthlete {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@unique([userId, athleteId])
   @@map("coach_athlete")
 }
 
@@ -138,8 +139,8 @@ model AthleteInvitation {
   athleteInvitationId Int @id @default(autoincrement()) @map("athlete_invitation_id")
 
   // fields
-  /// Email address of the invited athlete
-  email  String
+  /// Null only for a single-use link without a bound email.
+  email  String?
   /// Invitation token (null if user exists, set if user doesn't exist for account creation)
   token  String?           @unique
   /// Invitation status: null = auto-accept on account creation, PENDING = user exists and needs to accept, ACCEPTED, REJECTED
@@ -167,12 +168,17 @@ model CoachInvitation {
   coachInvitationId Int @id @default(autoincrement()) @map("coach_invitation_id")
 
   // fields
-  /// Email address of the invited coach
-  email  String
+  /// Null only for a single-use link without a bound email.
+  email  String?
   /// Invitation token (null if user exists, set if user doesn't exist for account creation)
   token  String?          @unique
   /// Invitation status: PENDING (default), ACCEPTED, or REJECTED
   status InvitationStatus @default(PENDING)
+
+  /// Existing invitations retain their original personal-coach meaning.
+  purpose    CoachInvitationPurpose @default(PERSONAL)
+  /// Only SHARE/TRANSFER use this selection; no athlete data is copied.
+  athleteIds Int[]                  @default([]) @map("athlete_ids")
 
   // relationships
   athleteUser   User  @relation("CoachInvitationsSent", fields: [athleteUserId], references: [userId])

@@ -13,6 +13,31 @@ function setup(users = [{ userId: 7, email: 'ana@example.com' }]) {
       },
       user: {
         findFirst: jest.fn().mockResolvedValue(users[0] ?? null),
+        findUnique: jest.fn().mockImplementation(async ({ where }) =>
+          where.userId === 7
+            ? {
+                userId: 7,
+                email: 'ana@example.com',
+                roles: ['COACH', 'SUPER_ADMIN'],
+                sessionVersion: 0,
+                athlete: {
+                  athleteId: 12,
+                  coachAthletes: [
+                    {
+                      coachAthleteId: 19,
+                      user: {
+                        userId: 3,
+                        email: 'coach@example.com',
+                        firstName: 'Coach',
+                        lastName: 'One',
+                      },
+                    },
+                  ],
+                },
+              }
+            : null,
+        ),
+        update: jest.fn(),
         findMany: jest.fn().mockResolvedValue(
           users.map((user) => ({
             ...user,
@@ -159,5 +184,22 @@ describe('admin commands', () => {
     );
     expect(deps.queueFullImports).toHaveBeenCalledWith([3, 5]);
     expect(lines).toEqual(['Backfill queued for 2 Garmin accounts']);
+  });
+
+  it('previews role repair and personal coach inspection without writes', async () => {
+    const { deps, lines, run } = setup();
+    expect(await run('repair-coach-athlete-role', '7', 'ana@example.com')).toBe(
+      0,
+    );
+    expect(lines.at(-1)).toBe('Preview only; add --apply to grant ATHLETE');
+    expect(deps.prisma.user.update).not.toHaveBeenCalled();
+
+    lines.length = 0;
+    expect(await run('inspect-athlete-coaches', '7', 'ana@example.com')).toBe(
+      0,
+    );
+    expect(lines).toContain('19\t3\tcoach@example.com\tCoach One');
+    expect(lines.at(-1)).toBe('Inspection only; no relationship changed.');
+    expect(deps.prisma.user.update).not.toHaveBeenCalled();
   });
 });

@@ -23,9 +23,11 @@ import {
 
 import { UserRole } from '@openathlete/database';
 import {
+  CreateInvitationLinkDto,
   InviteAthleteDto,
   InviteCoachDto,
   UpdateAthleteSettingsDto,
+  createInvitationLinkSchema,
   inviteAthleteSchema,
   inviteCoachSchema,
   updateAthleteSettingsDtoSchema,
@@ -35,6 +37,7 @@ import { JwtUser, UserTypeGuard } from 'src/modules/auth';
 import { UserTypes } from 'src/modules/auth/decorators/user-type.decorator';
 import { AuthUser } from 'src/modules/auth/decorators/user.decorator';
 import { AthleteInvitationService } from 'src/modules/auth/services/athlete-invitation.service';
+import { CoachInvitationService } from 'src/modules/auth/services/coach-invitation.service';
 
 import { AthleteSettingsService } from '../services/athlete-settings.service';
 import { AthleteService } from '../services/athlete.service';
@@ -46,6 +49,7 @@ export class AthleteController {
     private readonly athleteService: AthleteService,
     private athleteSettingsService: AthleteSettingsService,
     private athleteInvitationService: AthleteInvitationService,
+    private coachInvitationService: CoachInvitationService,
   ) {}
 
   @UseGuards(AuthGuard('jwt'), UserTypeGuard)
@@ -124,6 +128,7 @@ export class AthleteController {
   }
 
   @UseGuards(AuthGuard('jwt'), UserTypeGuard)
+  @UserTypes([UserRole.COACH])
   @ApiBearerAuth()
   @Get('coached')
   @ApiOperation({
@@ -196,7 +201,7 @@ export class AthleteController {
   }
 
   @UseGuards(AuthGuard('jwt'), UserTypeGuard)
-  @UserTypes([UserRole.COACH])
+  @UserTypes([UserRole.COACH, UserRole.SUPER_ADMIN])
   @ApiBearerAuth()
   @Post('invite/coach')
   @ApiOperation({
@@ -253,11 +258,37 @@ export class AthleteController {
     @JwtUser() user: AuthUser,
     @Body(new ZodValidationPipe(inviteCoachSchema)) body: InviteCoachDto,
   ) {
-    return this.athleteService.inviteCoach(user.userId, body.email);
+    return this.athleteService.inviteCoach(
+      user.userId,
+      body.email,
+      user.userId,
+      body.purpose,
+    );
   }
 
   @UseGuards(AuthGuard('jwt'), UserTypeGuard)
-  @UserTypes([UserRole.COACH])
+  @UserTypes([UserRole.COACH, UserRole.SUPER_ADMIN])
+  @ApiBearerAuth()
+  @Post('invitations/links')
+  createInvitationLink(
+    @JwtUser() user: AuthUser,
+    @Body(new ZodValidationPipe(createInvitationLinkSchema))
+    body: CreateInvitationLinkDto,
+  ) {
+    return body.kind === 'ATHLETE'
+      ? this.athleteInvitationService.createOpenInvitationLink(
+          user.userId,
+          user.userId,
+        )
+      : this.coachInvitationService.createOpenInvitationLink(
+          user.userId,
+          body.purpose,
+          user.userId,
+        );
+  }
+
+  @UseGuards(AuthGuard('jwt'), UserTypeGuard)
+  @UserTypes([UserRole.COACH, UserRole.SUPER_ADMIN])
   @ApiBearerAuth()
   @Post('invite/athlete')
   @ApiOperation({
@@ -320,6 +351,7 @@ export class AthleteController {
   }
 
   @UseGuards(AuthGuard('jwt'), UserTypeGuard)
+  @UserTypes([UserRole.COACH, UserRole.SUPER_ADMIN])
   @ApiBearerAuth()
   @Get('invitations/athletes/sent')
   @ApiOperation({
@@ -394,6 +426,7 @@ export class AthleteController {
   }
 
   @UseGuards(AuthGuard('jwt'), UserTypeGuard)
+  @UserTypes([UserRole.COACH, UserRole.SUPER_ADMIN])
   @ApiBearerAuth()
   @Get('invitations/coaches/sent')
   @ApiOperation({

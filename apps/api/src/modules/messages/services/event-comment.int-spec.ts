@@ -1,5 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
+import { UserRole } from '@openathlete/database';
+
 import { CaslAbilityFactory } from 'src/modules/auth';
 import { AuthUser } from 'src/modules/auth/decorators/user.decorator';
 import {
@@ -32,6 +34,7 @@ describe('comments on sessions and activities (PostgreSQL)', () => {
   const athlete = {
     userId: DELETED_USER_ID,
     email: 'athlete@example.com',
+    roles: [UserRole.ATHLETE],
     athlete: { athleteId: DELETED_ATHLETE_ID },
     coachAthletes: [],
   } as unknown as AuthUser;
@@ -39,6 +42,7 @@ describe('comments on sessions and activities (PostgreSQL)', () => {
   const coach = {
     userId: COACH_USER_ID,
     email: 'coach@example.com',
+    roles: [UserRole.COACH],
     athlete: { athleteId: COACH_ATHLETE_ID },
     coachAthletes: [{ athleteId: DELETED_ATHLETE_ID }],
   } as unknown as AuthUser;

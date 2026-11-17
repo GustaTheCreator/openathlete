@@ -25,9 +25,11 @@ import { Throttle } from '@nestjs/throttler';
 import {
   AuthResponseDto,
   FirebaseLoginDto,
+  InvitationTokenDto,
   LoginDto,
   RefreshTokenDto,
   firebaseLoginDtoSchema,
+  invitationTokenSchema,
   loginDtoSchema,
   refreshTokenDtoSchema,
 } from '@openathlete/shared';
@@ -245,14 +247,28 @@ export class AuthController {
     },
   })
   async verifyInvitation(@Query('token') token: string) {
-    const invitation =
-      await this.invitationService.verifyInvitationToken(token);
-    if (!invitation) {
-      return { valid: false };
-    }
-    return {
-      valid: true,
-      email: invitation.email,
-    };
+    return this.invitationService.preview(token);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Post('invitations/accept')
+  async acceptInvitation(
+    @JwtUser() user: AuthUser,
+    @Body(new ZodValidationPipe(invitationTokenSchema))
+    body: InvitationTokenDto,
+  ) {
+    await this.invitationService.accept(body.token, user.userId);
+    return { success: true };
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Post('invitations/reject')
+  async rejectInvitation(
+    @JwtUser() user: AuthUser,
+    @Body(new ZodValidationPipe(invitationTokenSchema))
+    body: InvitationTokenDto,
+  ) {
+    await this.invitationService.reject(body.token, user.userId);
+    return { success: true };
   }
 }

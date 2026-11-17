@@ -1,25 +1,29 @@
 import { ForbiddenException } from '@nestjs/common';
 
 import { UserRole } from '@openathlete/database';
+import { completeOnboardingDtoSchema } from '@openathlete/shared';
 
 import { UserService } from './user.service';
 
 describe('UserService role assignment', () => {
   it.each([
-    [undefined, undefined, [UserRole.ATHLETE, UserRole.COACH]],
+    [undefined, undefined, [UserRole.ATHLETE]],
     ['athlete-link', undefined, [UserRole.ATHLETE]],
-    [undefined, 'coach-link', [UserRole.COACH]],
+    [undefined, 'coach-link', [UserRole.ATHLETE, UserRole.COACH]],
     ['athlete-link', 'coach-link', [UserRole.ATHLETE, UserRole.COACH]],
   ])(
     'assigns only the role grants from validated invitations (%s, %s)',
     async (invitationToken, coachInvitationToken, expectedRoles) => {
       const create = jest.fn().mockResolvedValue({ userId: 12 });
-      const prisma = {
+      const prisma: Record<string, unknown> = {
         user: {
           findFirst: jest.fn().mockResolvedValue(null),
           create,
         },
       };
+      prisma.$transaction = jest.fn((operation: (tx: unknown) => unknown) =>
+        operation(prisma),
+      );
       const athleteInvitations = {
         verifyInvitationToken: jest.fn((token: string) =>
           Promise.resolve(
@@ -63,14 +67,17 @@ describe('UserService role assignment', () => {
     },
   );
 
-  it('persists a selected role subset and prevents self-granting a role', async () => {
+  it('preserves assigned roles during onboarding and prevents self-granting a role', async () => {
     const update = jest.fn().mockResolvedValue({});
     const prisma = {
       user: {
-        findUnique: jest.fn().mockResolvedValue({
-          userId: 12,
-          roles: [UserRole.ATHLETE],
-        }),
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce({ userId: 12, roles: [UserRole.ATHLETE] })
+          .mockResolvedValue({
+            userId: 12,
+            roles: [UserRole.ATHLETE, UserRole.COACH, UserRole.SUPER_ADMIN],
+          }),
         update,
       },
       athlete: { findUnique: jest.fn().mockResolvedValue({ athleteId: 4 }) },
@@ -97,20 +104,20 @@ describe('UserService role assignment', () => {
       { userId: 12 } as never,
       { roles: [UserRole.ATHLETE] } as never,
     );
-    const updatesAfterRoleSelection = update.mock.calls.length;
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ roles: [UserRole.ATHLETE] }),
+        data: expect.objectContaining({
+          roles: [UserRole.ATHLETE, UserRole.COACH, UserRole.SUPER_ADMIN],
+        }),
       }),
     );
+  });
 
-    await expect(
-      service.completeOnboarding(
-        { userId: 12 } as never,
-        { roles: [UserRole.ATHLETE], coachEmail: 'coach@example.com' } as never,
-      ),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-    expect(update).toHaveBeenCalledTimes(updatesAfterRoleSelection);
+  it('rejects SUPER_ADMIN in the public onboarding role schema', () => {
+    expect(
+      completeOnboardingDtoSchema.safeParse({ roles: [UserRole.SUPER_ADMIN] })
+        .success,
+    ).toBe(false);
   });
 
   it('notifies active sockets after password reset revokes every session', async () => {

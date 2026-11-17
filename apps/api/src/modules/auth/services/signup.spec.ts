@@ -14,12 +14,35 @@ import { UserService } from './user.service';
 
 function setup(env: Record<string, string> = {}) {
   const emitter = { emit: jest.fn() };
-  const prisma = {
+  const prisma: {
+    user: {
+      findFirst: jest.Mock;
+      count: jest.Mock;
+      create: jest.Mock;
+    };
+    $transaction: jest.Mock;
+  } = {
     user: {
       findFirst: jest.fn().mockResolvedValue(null),
       count: jest.fn().mockResolvedValue(3),
       create: jest.fn().mockResolvedValue({ userId: 42 }),
     },
+    $transaction: jest.fn(),
+  };
+  prisma.$transaction.mockImplementation(
+    (operation: (tx: unknown) => Promise<unknown>) => operation(prisma),
+  );
+  const athleteInvitations = {
+    verifyInvitationToken: jest.fn(async (token: string) =>
+      token === 'valid'
+        ? { athleteInvitationId: 1, email: 'ana@example.com' }
+        : null,
+    ),
+    consumeInvitation: jest.fn(),
+  };
+  const coachInvitations = {
+    verifyInvitationToken: jest.fn().mockResolvedValue(null),
+    consumeInvitation: jest.fn(),
   };
   const service = new UserService(
     prisma as unknown as PrismaService,
@@ -29,18 +52,8 @@ function setup(env: Record<string, string> = {}) {
     } as unknown as ConfigService<ApiEnvSchemaType, true>,
     emitter as unknown as EventEmitter2,
     {} as TokenService,
-    {
-      verifyInvitationToken: jest.fn(async (token: string) =>
-        token === 'valid'
-          ? { athleteInvitationId: 1, email: 'ana@example.com' }
-          : null,
-      ),
-      consumeInvitation: jest.fn(),
-    } as unknown as AthleteInvitationService,
-    {
-      verifyInvitationToken: jest.fn().mockResolvedValue(null),
-      consumeInvitation: jest.fn(),
-    } as unknown as CoachInvitationService,
+    athleteInvitations as unknown as AthleteInvitationService,
+    coachInvitations as unknown as CoachInvitationService,
     {} as AccountDeletionService,
   );
   const signUp = (
@@ -62,7 +75,7 @@ function setup(env: Record<string, string> = {}) {
       .filter(([slug]) => slug === SendEmailEvent.SLUG)
       .map(([, event]) => (event as SendEmailEvent<EmailId>).payload);
   const emailsTo = () => emails().map((email) => email.to);
-  return { prisma, signUp, emails, emailsTo };
+  return { prisma, signUp, emails, emailsTo, athleteInvitations };
 }
 
 describe('sign-up notification', () => {
@@ -163,13 +176,30 @@ describe('sign-up with an invitation link', () => {
     });
   });
 
-  it('takes the address Google or Apple gives', async () => {
-    const { signUp } = setup();
+  it('requires a provider address to match the invitation email', async () => {
+    const { signUp, prisma, athleteInvitations } = setup();
+    await expect(
+      signUp(
+        { invitationToken: 'valid', email: 'ANA@example.com' },
+        { emailFromProvider: true },
+      ),
+    ).resolves.toEqual({ userId: 42 });
+    expect(athleteInvitations.consumeInvitation).toHaveBeenCalledWith(
+      'valid',
+      42,
+      prisma,
+    );
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a provider relay address that differs from the invited address', async () => {
+    const { signUp, prisma } = setup();
     await expect(
       signUp(
         { invitationToken: 'valid', email: 'relay@privaterelay.appleid.com' },
         { emailFromProvider: true },
       ),
-    ).resolves.toEqual({ userId: 42 });
+    ).rejects.toThrow('INVITATION_EMAIL_MISMATCH');
+    expect(prisma.user.create).not.toHaveBeenCalled();
   });
 });

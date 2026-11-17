@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
+import { UserRole } from '@openathlete/database';
 import type { CompleteStrengthSessionDto } from '@openathlete/shared';
 
 import { CaslAbilityFactory } from 'src/modules/auth';
@@ -32,12 +33,14 @@ if (!databaseUrl)
 const athlete = {
   userId: DELETED_USER_ID,
   email: 'athlete@example.com',
+  roles: [UserRole.ATHLETE],
   athlete: { athleteId: DELETED_ATHLETE_ID },
   coachAthletes: [{ athleteId: COACH_ATHLETE_ID }],
 } as unknown as AuthUser;
 const coach = {
   userId: COACH_USER_ID,
   email: 'coach@example.com',
+  roles: [UserRole.COACH],
   athlete: { athleteId: COACH_ATHLETE_ID },
   coachAthletes: [{ athleteId: DELETED_ATHLETE_ID }],
 } as unknown as AuthUser;

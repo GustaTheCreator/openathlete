@@ -16,6 +16,7 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { useUserRoles } from '@/contexts/auth';
 import { useSpaceContext } from '@/contexts/space';
 import { m } from '@/paraglide/messages';
 import { getPath } from '@/routes/paths';
@@ -39,6 +40,7 @@ import { UserRole } from '@openathlete/shared';
 
 export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
   const { space } = useSpaceContext();
+  const roles = useUserRoles();
   const { data: athletes } = useGetMyCoachedAthletesQuery();
   const { resolvedTheme } = useTheme();
   const { isMobile, setOpenMobile, state } = useSidebar();
@@ -52,7 +54,18 @@ export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
     }
   };
 
-  const sidebarNavigation = useMemo(() => {
+  const sidebarNavigation = useMemo<
+    Parameters<typeof NavMain>[0]['items']
+  >(() => {
+    const adminItem: Parameters<typeof NavMain>[0]['items'][number] = {
+      title: m.admin_users(),
+      url: getPath(['dashboard', 'admin']),
+      icon: Users,
+      spaces: ['ATHLETE', 'COACH', 'SUPER_ADMIN'] as UserRole[],
+    };
+    if (space === 'SUPER_ADMIN') {
+      return [adminItem];
+    }
     if (space === 'COACH') {
       type SidebarItem = Parameters<typeof NavMain>[0]['items'][number];
       const baseItems: SidebarItem[] = [
@@ -117,7 +130,11 @@ export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
           },
         ],
       })) as SidebarItem[];
-      return [...baseItems, ...athleteGroups];
+      return [
+        ...baseItems,
+        ...athleteGroups,
+        ...(roles?.includes('SUPER_ADMIN') ? [adminItem] : []),
+      ];
     }
 
     return [
@@ -163,8 +180,9 @@ export function AppSidebar({ ...props }: ComponentProps<typeof Sidebar>) {
             },
           ]
         : []),
+      ...(roles?.includes('SUPER_ADMIN') ? [adminItem] : []),
     ];
-  }, [athletes, space]);
+  }, [athletes, roles, space]);
 
   return (
     <Sidebar collapsible="icon" variant="inset" {...props}>
