@@ -19,10 +19,14 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
+
+from artifacts import DeployError, expected_labels, names, repository, validate_v2
 
 REPOSITORY = "GustaTheCreator/openathlete"
 REPOSITORY_URL = "https://github.com/GustaTheCreator/openathlete"
@@ -32,10 +36,6 @@ HEX40 = re.compile(r"^[a-f0-9]{40}$")
 HEX64 = re.compile(r"^[a-f0-9]{64}$")
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 API = "https://api.github.com"
-
-
-class DeployError(RuntimeError):
-    pass
 
 
 def log(message: str) -> None:
@@ -50,24 +50,6 @@ def _timed_phase(timings: dict[str, float], name: str):
     finally:
         timings[name] = round(time.monotonic() - started, 3)
         log(json.dumps({"event": "deploy_phase", "phase": name, "seconds": timings[name]}, sort_keys=True))
-
-
-def _backup_retention(state: Path, keep: int = 5) -> dict[str, Any]:
-    """Report old database dumps while preserving both deployed recovery receipts."""
-    if keep < 1:
-        raise DeployError("At least one recent database backup must be retained")
-    backups = sorted((state / "backups").glob("database-*.dump"), key=lambda path: path.stat().st_mtime, reverse=True)
-    protected: set[str] = set()
-    current = _read_state(state / "current.json") or {}
-    previous = _read_state(state / "previous.json") or {}
-    for receipt in (current, previous.get("current") or {}):
-        backup = receipt.get("backup")
-        if isinstance(backup, str):
-            protected.add(Path(backup).name)
-    retained = {path.name for path in backups[:keep]} | protected
-    eligible = [path.name for path in backups if path.name not in retained]
-    preserved = sorted(retained & {path.name for path in backups})
-    return {"total": len(backups), "preserved": preserved, "eligible": eligible}
 
 
 def _migration_seconds(output: str) -> float | None:
@@ -111,9 +93,15 @@ def parse_version(value: str) -> tuple[int, int, int]:
 
 
 def validate_manifest(value: Any, tag: str, source_url: str) -> dict[str, Any]:
-    if not isinstance(value, dict) or set(value) != {"schemaVersion", "version", "tag", "revision", "migrationTree", "images", "source"}:
+    if not isinstance(value, dict):
         raise DeployError("Release manifest has unexpected or missing fields")
-    if type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1:
+    schema_version = value.get("schemaVersion")
+    expected_fields = {"schemaVersion", "version", "tag", "revision", "migrationTree", "images", "source"}
+    if schema_version == 2:
+        expected_fields.add("components")
+    if set(value) != expected_fields:
+        raise DeployError("Release manifest has unexpected or missing fields")
+    if type(schema_version) is not int or schema_version not in (1, 2):
         raise DeployError("Unsupported release manifest schema")
     version = value["version"]
     parse_version(version)
@@ -121,14 +109,20 @@ def validate_manifest(value: Any, tag: str, source_url: str) -> dict[str, Any]:
         raise DeployError("Manifest tag and stable version do not match the selected release")
     if not HEX40.fullmatch(str(value["revision"])) or not HEX40.fullmatch(str(value["migrationTree"])):
         raise DeployError("Manifest revision or migration tree is invalid")
-    images = value["images"]
-    if not isinstance(images, dict) or set(images) != {"api", "web"}:
-        raise DeployError("Manifest must contain exactly API and web image digests")
-    for service in ("api", "web"):
-        expected = f"ghcr.io/gustathecreator/openathlete-{service}@sha256:"
-        digest = images[service]
-        if not isinstance(digest, str) or not digest.startswith(expected) or not HEX64.fullmatch(digest[len(expected):]):
-            raise DeployError(f"Invalid {service} image digest")
+    if schema_version == 1:
+        images = value["images"]
+        if not isinstance(images, dict) or set(images) != {"api", "web"}:
+            raise DeployError("Manifest must contain exactly API and web image digests")
+        for service in ("api", "web"):
+            expected = f"ghcr.io/gustathecreator/openathlete-{service}@sha256:"
+            digest = images[service]
+            if not isinstance(digest, str) or not digest.startswith(expected) or not HEX64.fullmatch(digest[len(expected):]):
+                raise DeployError(f"Invalid {service} image digest")
+    else:
+        try:
+            validate_v2(value)
+        except ValueError as exc:
+            raise DeployError(str(exc)) from exc
     source = value["source"]
     expected_source_url = f"https://github.com/{REPOSITORY}/releases/download/{tag}/{SOURCE_NAME.format(tag=tag)}"
     if not isinstance(source, dict) or set(source) != {"url", "sha256"} or source["url"] != expected_source_url or source_url != expected_source_url:
@@ -144,8 +138,17 @@ def load_config(path: Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError) as exc:
         raise DeployError("Cannot read deployment configuration") from exc
     required = {"root", "repository", "composeFiles", "project", "postgresService", "allowedMigrationTrees", "healthTimeoutSeconds"}
-    if not isinstance(cfg, dict) or set(cfg) != required:
+    if not isinstance(cfg, dict) or not required <= set(cfg) or set(cfg) - required - {"retention"}:
         raise DeployError("Configuration fields do not match the supported schema")
+    retention = cfg.get("retention")
+    if "retention" in cfg and (
+        not isinstance(retention, dict) or set(retention) != {"enabled", "keep", "pins"}
+        or type(retention["enabled"]) is not bool
+        or type(retention["keep"]) is not int or not 1 <= retention["keep"] <= 1000
+        or not isinstance(retention["pins"], list)
+        or any(not isinstance(pin, str) or not pin or "\n" in pin or "\r" in pin for pin in retention["pins"])
+    ):
+        raise DeployError("retention must contain only enabled, keep and pins with valid values")
     if cfg["repository"] != REPOSITORY:
         raise DeployError("Repository is fixed to the reviewed OpenAthlete fork")
     if cfg["postgresService"] != "postgres":
@@ -192,10 +195,11 @@ def _github_release() -> tuple[str, dict[str, str]] | None:
 
 
 def _run(args: list[str], *, capture: bool = True, check: bool = True, input_data: bytes | None = None,
-         timeout: int = 120) -> bytes:
+         timeout: int = 120, env: dict[str, str] | None = None) -> bytes:
     try:
         result = subprocess.run(args, input=input_data, stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
-                                stderr=subprocess.PIPE if capture else subprocess.DEVNULL, check=False, timeout=timeout)
+                                stderr=subprocess.PIPE if capture else subprocess.DEVNULL, check=False, timeout=timeout,
+                                env=env)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise DeployError(f"Command failed to run: {Path(args[0]).name}") from exc
     if check and result.returncode:
@@ -225,11 +229,9 @@ def _image_metadata(image: str) -> dict[str, str]:
 
 
 def _verify_images(manifest: dict[str, Any]) -> None:
-    for service in ("api", "web"):
+    for service in names(manifest):
         labels = _image_metadata(manifest["images"][service])
-        expected = {"org.opencontainers.image.revision": manifest["revision"],
-                    "org.opencontainers.image.source": REPOSITORY_URL,
-                    "org.opencontainers.image.version": manifest["version"]}
+        expected = expected_labels(manifest, service)
         if any(labels.get(key) != value for key, value in expected.items()):
             raise DeployError(f"Pulled {service} image labels do not match the release manifest")
 
@@ -304,13 +306,15 @@ def _make_override(root: Path, manifest: dict[str, Any]) -> bytes:
     stable = root / "public-source" / "openathlete.tar.gz"
     # Compose JSON is valid YAML; replacing only these two services preserves
     # all values and mounts from every operator-maintained Compose file.
-    obj = {"services": {
-        "api": {"image": manifest["images"]["api"]},
-        "web": {"image": manifest["images"]["web"], "volumes": [
+    api = {"image": manifest["images"]["api"]}
+    web = {"image": manifest["images"]["web"], "volumes": [
             {"type": "bind", "source": str(stable), "target": "/usr/share/nginx/html/source/openathlete.tar.gz", "read_only": True, "bind": {"create_host_path": False}},
             {"type": "bind", "source": str(source), "target": f"/usr/share/nginx/html/source/{source.name}", "read_only": True, "bind": {"create_host_path": False}}
         ]}
-    }}
+    if manifest.get("schemaVersion") == 2:
+        api["environment"] = {"SKIP_MIGRATIONS": "true"}
+        web["environment"] = {"SOURCE_CODE_URL": f"https://github.com/{REPOSITORY}/tree/{manifest['tag']}"}
+    obj = {"services": {"api": api, "web": web}}
     return (json.dumps(obj, sort_keys=True, indent=2) + "\n").encode()
 
 
@@ -381,6 +385,137 @@ def _backup_database(cfg: dict[str, Any], state: Path) -> Path:
         raise DeployError("PostgreSQL backup is empty; refusing deployment")
     _write_private(path, data)
     return path
+
+
+def _compose_database_connection(cfg: dict[str, Any], state: Path) -> tuple[str, str]:
+    """Read the API database URL and shared network without emitting Compose config."""
+    try:
+        config = json.loads(_run(_compose(cfg, state, "config", "--format", "json")))
+        services = config["services"]
+        api, postgres = services["api"], services[cfg["postgresService"]]
+        environment = api.get("environment", {})
+        database_url = environment.get("DATABASE_URL") if isinstance(environment, dict) else None
+        parsed = urlsplit(database_url) if isinstance(database_url, str) else None
+        if parsed is None or parsed.scheme not in ("postgres", "postgresql") or parsed.hostname != cfg["postgresService"]:
+            raise ValueError
+
+        networks = config.get("networks", {})
+
+        def actual_networks(service: dict[str, Any]) -> dict[str, str]:
+            attached = service.get("networks", {})
+            keys = attached.keys() if isinstance(attached, dict) else attached
+            result: dict[str, str] = {}
+            for key in keys:
+                definition = networks.get(key, {})
+                actual = definition.get("name") if isinstance(definition, dict) else None
+                result[key] = actual or f"{cfg['project']}_{key}"
+            return result
+
+        api_networks = actual_networks(api)
+        postgres_networks = actual_networks(postgres)
+        shared = set(api_networks.values()) & set(postgres_networks.values())
+        if not shared:
+            raise ValueError
+        return database_url, sorted(shared)[0]
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise DeployError("Could not safely derive the API database connection and shared Compose network") from exc
+
+
+def _run_migrator(cfg: dict[str, Any], state: Path, image: str) -> None:
+    database_url, network = _compose_database_connection(cfg, state)
+    name = f"openathlete-migrator-{uuid.uuid4().hex}"
+    env = os.environ.copy()
+    env.update({"DATABASE_URL": database_url, "CHECKPOINT_DISABLE": "1"})
+    try:
+        _run(["docker", "run", "--rm", "--name", name, "--network", network,
+              "--env", "DATABASE_URL", "--env", "CHECKPOINT_DISABLE=1", image],
+             timeout=600, env=env)
+    finally:
+        # --rm handles normal completion; this removes the exact named container
+        # if the CLI timed out or was interrupted while it was still running.
+        with contextlib.suppress(DeployError):
+            _run(["docker", "rm", "--force", name], timeout=30)
+
+
+def _retention_image_inventory() -> tuple[list[dict[str, Any]], list[str]]:
+    records: list[dict[str, Any]] = []
+    repositories = sorted({repository(component) for component in ("api", "web", "migrator")})
+    for image_repository in repositories:
+        ids = _run(["docker", "image", "ls", "--quiet", "--no-trunc", image_repository]).decode().splitlines()
+        for image_id in set(ids):
+            if not image_id:
+                continue
+            try:
+                info = json.loads(_run(["docker", "image", "inspect", image_id]))[0]
+            except (IndexError, json.JSONDecodeError) as exc:
+                raise DeployError("Could not inspect retained component images") from exc
+            for digest in info.get("RepoDigests") or []:
+                if isinstance(digest, str) and digest.startswith(image_repository + "@sha256:"):
+                    records.append({"reference": digest, "id": info.get("Id"),
+                                    "created": info.get("Created", ""),
+                                    "repoTags": info.get("RepoTags") or []})
+    containers = _run(["docker", "ps", "--all", "--quiet", "--no-trunc"]).decode().splitlines()
+    used_ids = []
+    for container in set(containers):
+        if not container:
+            continue
+        try:
+            info = json.loads(_run(["docker", "inspect", container]))[0]
+        except (IndexError, json.JSONDecodeError) as exc:
+            raise DeployError("Could not inspect container image usage") from exc
+        image_id = info.get("Image")
+        if isinstance(image_id, str):
+            used_ids.append(image_id)
+    return records, used_ids
+
+
+def _apply_configured_retention(cfg: dict[str, Any], state: Path, current: dict[str, Any],
+                                previous: dict[str, Any] | None) -> None:
+    retention = cfg.get("retention")
+    if not retention or not retention["enabled"]:
+        return
+    try:
+        from retention import apply_retention, plan_retention
+        from restore_check import verify_backup
+
+        backup_tree = current.get("backupMigrationTree")
+        backup_tag = current.get("backupSourceTag")
+        backup_sha256 = current.get("backupSourceSha256")
+        if (not isinstance(backup_tree, str) or not HEX40.fullmatch(backup_tree)
+                or not isinstance(backup_tag, str) or not re.fullmatch(r"tourmalet-v\d+\.\d+\.\d+", backup_tag)
+                or not isinstance(backup_sha256, str) or not HEX64.fullmatch(backup_sha256)):
+            raise DeployError("Current backup has no known pre-migration source; cleanup was skipped")
+        source_archive = _source_file(Path(cfg["root"]), backup_tag)
+        restore = verify_backup(Path(current["backup"]), backup_tree, source_archive, backup_sha256)
+        references, container_ids = _retention_image_inventory()
+        plan = plan_retention(Path(cfg["root"]), state, current, previous,
+                              pins=retention["pins"], keep=retention["keep"],
+                              image_references=references, container_image_ids=container_ids)
+        result = apply_retention(plan, restore, backup_tree, apply=True)
+        if result["errors"]:
+            log("WARNING: artifact retention completed with cleanup errors")
+        else:
+            log(f"Artifact retention removed {len(result['deleted'])} eligible artifacts after restore verification.")
+    except Exception as exc:
+        log(f"WARNING: artifact retention skipped or incomplete: {type(exc).__name__}")
+
+
+def _retention_preview(cfg: dict[str, Any], state: Path, current: dict[str, Any],
+                       previous: dict[str, Any] | None) -> None:
+    retention = cfg.get("retention")
+    if not retention or not retention["enabled"]:
+        log("Artifact retention is disabled; no cleanup was planned.")
+        return
+    try:
+        from retention import plan_retention
+
+        references, container_ids = _retention_image_inventory()
+        plan = plan_retention(Path(cfg["root"]), state, current, previous,
+                              pins=retention["pins"], keep=retention["keep"],
+                              image_references=references, container_image_ids=container_ids)
+        log(f"Artifact retention dry-run: {len(plan['files'])} files and {len(plan['images'])} images eligible; nothing removed.")
+    except Exception as exc:
+        log(f"WARNING: artifact retention preview unavailable: {type(exc).__name__}")
 
 
 def _wait_health(cfg: dict[str, Any], state: Path) -> None:
@@ -473,6 +608,24 @@ def deploy(cfg: dict[str, Any], state: Path) -> int:
         snapshot = _snapshot(cfg, state)
     with _timed_phase(timings, "database_backup"):
         backup = _backup_database(cfg, state)
+    current_before = snapshot.get("current") or {}
+    backup_tree = current_before.get("migrationTree") if isinstance(current_before, dict) else None
+    migration_seconds = None
+    if manifest["schemaVersion"] == 2 and (
+        current_before.get("schemaVersion") != 2
+        or current_before.get("migrationTree") != manifest["migrationTree"]
+    ):
+        try:
+            with _timed_phase(timings, "database_migration"):
+                migration_started = time.monotonic()
+                _run_migrator(cfg, state, manifest["images"]["migrator"])
+                migration_seconds = round(time.monotonic() - migration_started, 3)
+        except Exception as migration_error:
+            try:
+                _reject_release(state, manifest["version"], manifest["revision"], "migration_failed")
+            except Exception as reject_error:
+                raise DeployError("Database migration failed before app cutover, and the failed-release guard could not be saved") from reject_error
+            raise DeployError("Database migration failed before app cutover; the database was not automatically restored") from migration_error
     root = Path(cfg["root"])
     source_path = _source_file(root, manifest["tag"])
     source_path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
@@ -491,7 +644,11 @@ def deploy(cfg: dict[str, Any], state: Path) -> int:
         _write_private(state / "previous.json", (json.dumps(snapshot, sort_keys=True) + "\n").encode())
         activation_started = True
         with _timed_phase(timings, "container_activation"):
-            _run(_compose(cfg, state, "up", "-d", "--no-deps", "--no-build", "--pull", "never", "api", "web"))
+            services = ["web"]
+            target_api_id = _run(["docker", "image", "inspect", manifest["images"]["api"], "--format", "{{.Id}}"]).decode().strip()
+            if snapshot["containers"].get("api", {}).get("image") != target_api_id:
+                services.insert(0, "api")
+            _run(_compose(cfg, state, "up", "-d", "--no-deps", "--no-build", "--pull", "never", *services))
         with _timed_phase(timings, "health_wait"):
             _wait_health(cfg, state)
         after = _snapshot(cfg, state)
@@ -501,20 +658,26 @@ def deploy(cfg: dict[str, Any], state: Path) -> int:
         after_other = {name: item for name, item in after["containers"].items() if name not in {"api", "web"}}
         if before_other != after_other:
             raise DeployError("An unrelated Compose service changed during deployment")
-        migration_seconds = None
         api = after["containers"].get("api", {})
-        if api.get("id") and api.get("startedAt"):
+        if migration_seconds is None and api.get("id") and api.get("startedAt"):
             try:
                 startup = _run(["docker", "logs", "--since", api["startedAt"], api["id"]], timeout=10)
                 migration_seconds = _migration_seconds(startup.decode(errors="replace"))
             except DeployError:
                 pass  # Startup metrics must not roll back an otherwise healthy deployment.
-        current = {"version": manifest["version"], "revision": manifest["revision"], "migrationTree": manifest["migrationTree"],
+        current = {"schemaVersion": manifest["schemaVersion"], "version": manifest["version"], "revision": manifest["revision"],
+                   "migrationTree": manifest["migrationTree"], "backupMigrationTree": backup_tree,
+                   "backupSourceTag": current_before.get("tag"),
+                   "backupSourceSha256": current_before.get("sourceSha256"),
                    "tag": manifest["tag"], "images": manifest["images"], "sourceSha256": manifest["source"]["sha256"],
+                   "sourceArchive": str(source_path),
                    "manifestFingerprint": _manifest_fingerprint(manifest), "backup": str(backup), "deployedAt": int(time.time()),
                    "phaseTimingsSeconds": timings, "databaseMigrationSeconds": migration_seconds,
                    "deployElapsedSeconds": round(time.monotonic() - started, 3)}
+        if manifest["schemaVersion"] == 2:
+            current["components"] = manifest["components"]
         _write_private(state / "current.json", (json.dumps(current, sort_keys=True) + "\n").encode())
+        _apply_configured_retention(cfg, state, current, snapshot.get("current"))
     except Exception:
         rejection_failure = None
         if activation_started:
@@ -573,9 +736,7 @@ def status(cfg: dict[str, Any], state: Path) -> int:
             f"Database migration seconds: {current.get('databaseMigrationSeconds', 'unavailable')}\n"
             "Runtime: healthy; image digests verified\n"
             f"Source SHA-256: {current.get('sourceSha256')}\nDeployed: {current.get('deployedAt')}")
-    report = _backup_retention(state)
-    log(f"Database backup retention dry-run: {report['total']} found; "
-        f"preserved={json.dumps(report['preserved'])}; eligible={json.dumps(report['eligible'])}; no files removed.")
+    _retention_preview(cfg, state, current or {}, _read_state(state / "previous.json"))
     return 0
 
 

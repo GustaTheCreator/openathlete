@@ -19,3 +19,13 @@
 2026-11-17 — Keep CI heavy jobs parallel and server polling unchanged until further measurement — a universal static-check barrier adds 60–78 seconds to green runs, and polling was not the bottleneck; optimize the measured E2E work before adding shards, component provenance or a separate migrator.
 
 2026-11-17 — Prioritize changed E2E specs and run the inverse selection afterward — preserves the complete regression while avoiding duplicate execution of expensive changed tests; discovery verified all 216 test identities are covered exactly once (22 prioritized, 194 remaining).
+
+2026-11-17 — Complete the workflow with parallel component images and two balanced E2E stacks — version-2 provenance permits unchanged API/web/migrator reuse while a final identity comparison prevents missing or duplicated regression tests. This supersedes the earlier decision to postpone shards and component releases; complete pipeline gains must be measured from CI receipts.
+
+2026-11-17 — Put the migration CLI in a dedicated image and run approved migrations before application cutover — keeps the runtime smaller, backs up before changing the database and preserves version-1 application rollback. Migrator tags share the existing public API package without replacing runtime tags.
+
+2026-11-17 — Gate heavy PR work on lint/types while keeping stable candidates parallel — avoids spending image-build time on an immediately invalid PR without adding that barrier to stable delivery.
+
+2026-11-17 — Require a bound isolated restore before opt-in artifact retention — protect current/previous releases, legacy pins and container-referenced images; verify backup/source hashes and actual migration history before deleting only allowlisted project artifacts.
+
+2026-11-17 — Fail CI on flaky retries and correlate HTTP 500 responses with opaque error IDs — retained historical evidence does not establish the signup failure's cause; future diagnostics must link the fixture to safe server metadata without logging request identities or credentials.

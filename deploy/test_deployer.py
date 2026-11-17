@@ -1,6 +1,5 @@
 import hashlib
 import json
-import os
 import tempfile
 import unittest
 import copy
@@ -25,11 +24,38 @@ MANIFEST = {
     },
     "source": {"url": URL, "sha256": "e" * 64},
 }
+V2_TAG = "tourmalet-v1.7.0"
+V2_URL = f"https://github.com/{deployer.REPOSITORY}/releases/download/{V2_TAG}/openathlete-{V2_TAG}.tar.gz"
+V2_MANIFEST = {
+    "schemaVersion": 2, "version": "1.7.0", "tag": V2_TAG,
+    "revision": "f" * 40, "migrationTree": "b" * 40,
+    "images": {name: f"ghcr.io/gustathecreator/openathlete-{'api' if name == 'migrator' else name}@sha256:{letter * 64}"
+               for name, letter in (("api", "c"), ("web", "d"), ("migrator", "e"))},
+    "source": {"url": V2_URL, "sha256": "e" * 64},
+    "components": {
+        "api": {"revision": "a" * 40, "version": "1.6.9", "inputs": "1" * 64},
+        "web": {"revision": "b" * 40, "version": "1.7.0", "inputs": "2" * 64},
+        "migrator": {"revision": "c" * 40, "version": "1.6.8", "inputs": "3" * 64},
+    },
+}
 
 
 class ManifestTests(unittest.TestCase):
     def test_accepts_exact_release_manifest(self):
         self.assertEqual(deployer.validate_manifest(MANIFEST, TAG, URL), MANIFEST)
+
+    def test_accepts_v2_and_verifies_component_specific_labels(self):
+        manifest = deployer.validate_manifest(V2_MANIFEST, V2_TAG, V2_URL)
+        labels = [deployer.expected_labels(manifest, component) for component in deployer.names(manifest)]
+        self.assertEqual([label["org.opencontainers.image.revision"] for label in labels],
+                         ["a" * 40, "b" * 40, "c" * 40])
+        self.assertEqual([label["org.opencontainers.image.version"] for label in labels], ["1.6.9", "1.7.0", "1.6.8"])
+        with patch.object(deployer, "_image_metadata", side_effect=lambda image: {
+            component: deployer.expected_labels(manifest, component)
+            for component in deployer.names(manifest)
+        }[next(component for component in deployer.names(manifest) if manifest["images"][component] == image)]) as metadata:
+            deployer._verify_images(manifest)
+        self.assertEqual(metadata.call_count, 3)
 
     def test_rejects_other_repository_or_archive(self):
         for bad_url in (URL.replace("GustaTheCreator", "attacker"), URL + "?download=1"):
@@ -118,6 +144,27 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(found[0], TAG)
 
 
+class ConfigTests(unittest.TestCase):
+    def test_legacy_config_disables_retention_and_v2_retention_is_strict(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "compose.yml").write_text("services: {}\n", encoding="utf-8")
+            config_path = root / "config.json"
+            config = {"root": str(root), "repository": deployer.REPOSITORY,
+                      "composeFiles": ["compose.yml"], "project": "openathlete",
+                      "postgresService": "postgres", "allowedMigrationTrees": ["a" * 40],
+                      "healthTimeoutSeconds": 90}
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            self.assertNotIn("retention", deployer.load_config(config_path))
+            config["retention"] = {"enabled": True, "keep": 3, "pins": ["legacy.dump"]}
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            self.assertTrue(deployer.load_config(config_path)["retention"]["enabled"])
+            config["retention"]["unexpected"] = True
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            with self.assertRaisesRegex(deployer.DeployError, "retention"):
+                deployer.load_config(config_path)
+
+
 class FilesystemTests(unittest.TestCase):
     def test_generated_override_changes_only_app_images_and_adds_readonly_source(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -129,6 +176,13 @@ class FilesystemTests(unittest.TestCase):
         self.assertTrue(all(volume["read_only"] for volume in data["services"]["web"]["volumes"]))
         self.assertIn("openathlete-tourmalet-v1.6.1.tar.gz", data["services"]["web"]["volumes"][1]["source"])
 
+    def test_v2_override_skips_api_migrations_and_sets_versioned_source_url(self):
+        with tempfile.TemporaryDirectory() as temp:
+            data = json.loads(deployer._make_override(Path(temp), V2_MANIFEST))
+        self.assertEqual(data["services"]["api"]["environment"], {"SKIP_MIGRATIONS": "true"})
+        self.assertEqual(data["services"]["web"]["environment"]["SOURCE_CODE_URL"],
+                         f"https://github.com/{deployer.REPOSITORY}/tree/{V2_TAG}")
+
     def test_private_atomic_write_and_sha_check(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / ".deploy" / "archive"
@@ -137,31 +191,6 @@ class FilesystemTests(unittest.TestCase):
             self.assertEqual(deployer._file_hash(path), hashlib.sha256(b"fixture archive").hexdigest())
             if hasattr(deployer.os, "fchmod"):
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-
-    def test_backup_retention_dry_run_preserves_active_and_previous_receipts(self):
-        with tempfile.TemporaryDirectory() as temp:
-            state = Path(temp) / ".deploy"
-            backups = state / "backups"
-            backups.mkdir(parents=True)
-            names = [f"database-{index}.dump" for index in range(7)]
-            for index, name in enumerate(names):
-                path = backups / name
-                path.write_bytes(b"synthetic")
-                path.touch()
-                path.chmod(0o600)
-                os.utime(path, (index + 1, index + 1))
-            (state / "current.json").write_text(json.dumps({"backup": str(backups / names[0])}), encoding="utf-8")
-            (state / "previous.json").write_text(json.dumps({"current": {"backup": str(backups / names[1])}}), encoding="utf-8")
-            report = deployer._backup_retention(state, keep=3)
-            self.assertEqual(report["total"], 7)
-            self.assertEqual(set(report["preserved"]), {names[0], names[1], names[4], names[5], names[6]})
-            self.assertEqual(report["eligible"], [names[3], names[2]])
-            self.assertTrue(all((backups / name).exists() for name in names))
-
-    def test_backup_retention_requires_at_least_one_recent_backup(self):
-        with self.assertRaisesRegex(deployer.DeployError, "At least one"):
-            deployer._backup_retention(Path("unused"), keep=0)
-
 
 class DeploymentFlowTests(unittest.TestCase):
     def setUp(self):
@@ -188,6 +217,9 @@ class DeploymentFlowTests(unittest.TestCase):
         self.up_count = 0
         self.pull_count = 0
         self.fail_up_at = None
+        self.fail_migrator = False
+        self.live_api_image = "image-api"
+        self.migrator_env = None
 
     def fake_run(self, args, **kwargs):
         self.commands.append(list(args))
@@ -197,6 +229,24 @@ class DeploymentFlowTests(unittest.TestCase):
         if args[:2] == ["docker", "pull"]:
             self.pull_count += 1
             return b"pulled"
+        if args[:3] == ["docker", "image", "inspect"]:
+            return b"target-api-image"
+        if args[:2] == ["docker", "run"]:
+            self.migrator_env = kwargs.get("env")
+            if self.fail_migrator:
+                raise deployer.DeployError("simulated migration failure")
+            return b"migrations applied"
+        if args[:3] == ["docker", "rm", "--force"]:
+            return b"removed"
+        if args[:2] == ["docker", "compose"] and "config" in args:
+            return json.dumps({
+                "services": {
+                    "api": {"environment": {"DATABASE_URL": "postgresql://oa:private@postgres:5432/oa"},
+                            "networks": {"app": {}}},
+                    "postgres": {"networks": {"app": {}}},
+                },
+                "networks": {"app": {"name": "openathlete_app"}},
+            }).encode()
         if args[:2] == ["docker", "compose"] and "ps" in args:
             if args[-1:] == ["postgres"]:
                 return b"postgres-id\n"
@@ -207,7 +257,8 @@ class DeploymentFlowTests(unittest.TestCase):
             state = {"Status": "running", "StartedAt": f"started-{service}"}
             if service == "web":
                 state["Health"] = {"Status": "healthy"}
-            value = {"Id": ident, "Image": f"image-{service}", "Config": {"Labels": {"com.docker.compose.service": service}}, "State": state}
+            value = {"Id": ident, "Image": self.live_api_image if service == "api" else f"image-{service}",
+                     "Config": {"Labels": {"com.docker.compose.service": service}}, "State": state}
             return json.dumps([value]).encode()
         if args[:2] == ["docker", "exec"]:
             self.backup_args = list(args)
@@ -222,9 +273,127 @@ class DeploymentFlowTests(unittest.TestCase):
     def request(self, url, limit=2_000_000):
         if url == "manifest-asset":
             return json.dumps(self.manifest).encode()
-        if url == URL:
+        if url == self.manifest["source"]["url"]:
             return self.archive
         raise AssertionError(f"Unexpected URL: {url}")
+
+    def use_v2(self):
+        self.manifest = copy.deepcopy(V2_MANIFEST)
+        self.manifest["source"]["sha256"] = hashlib.sha256(self.archive).hexdigest()
+        self.urls = {"manifest": "manifest-asset", "source": V2_URL}
+
+    def test_v2_migrates_after_backup_and_before_application_cutover(self):
+        self.use_v2()
+        with patch.object(deployer, "_github_release", return_value=(V2_TAG, self.urls)), \
+                patch.object(deployer, "_request", side_effect=self.request), \
+                patch.object(deployer, "_run", side_effect=self.fake_run), \
+                patch.object(deployer, "_verify_images"), \
+                patch.object(deployer, "_wait_health"):
+            self.assertEqual(deployer.deploy(self.cfg, self.state), 0)
+        backup_index = next(i for i, args in enumerate(self.commands) if args[:2] == ["docker", "exec"])
+        migrate_index = next(i for i, args in enumerate(self.commands) if args[:2] == ["docker", "run"])
+        activation_index = next(i for i, args in enumerate(self.commands)
+                                if args[:2] == ["docker", "compose"] and "up" in args)
+        self.assertLess(backup_index, migrate_index)
+        self.assertLess(migrate_index, activation_index)
+        migrate_args = self.commands[migrate_index]
+        self.assertIn("openathlete_app", migrate_args)
+        self.assertNotIn("oa:private", " ".join(migrate_args))
+        self.assertEqual(self.migrator_env["DATABASE_URL"], "postgresql://oa:private@postgres:5432/oa")
+        self.assertEqual(self.migrator_env["CHECKPOINT_DISABLE"], "1")
+        current = json.loads((self.state / "current.json").read_text(encoding="utf-8"))
+        self.assertEqual(current["schemaVersion"], 2)
+        self.assertEqual(current["components"], V2_MANIFEST["components"])
+        self.assertIsNone(current["backupMigrationTree"])
+
+    def test_v2_migration_failure_rejects_release_without_cutover_or_restore(self):
+        self.use_v2()
+        self.fail_migrator = True
+        with patch.object(deployer, "_github_release", return_value=(V2_TAG, self.urls)), \
+                patch.object(deployer, "_request", side_effect=self.request), \
+                patch.object(deployer, "_run", side_effect=self.fake_run), \
+                patch.object(deployer, "_verify_images"), \
+                patch.object(deployer, "_wait_health") as health:
+            with self.assertRaisesRegex(deployer.DeployError, "not automatically restored"):
+                deployer.deploy(self.cfg, self.state)
+        self.assertEqual(self.up_count, 0)
+        self.assertEqual((self.root / "public-source" / "openathlete.tar.gz").read_bytes(), b"old public source")
+        self.assertEqual(sum(args[:2] == ["docker", "exec"] for args in self.commands), 1)
+        self.assertTrue(any(args[:3] == ["docker", "rm", "--force"] for args in self.commands))
+        rejected = json.loads((self.state / "rejected.json").read_text(encoding="utf-8"))
+        self.assertEqual(rejected["releases"][-1]["reason"], "migration_failed")
+        health.assert_not_called()
+
+    def test_v2_same_migration_tree_reuses_api_image_without_recreating_it(self):
+        self.use_v2()
+        self.live_api_image = "target-api-image"
+        (self.state / "current.json").write_text(json.dumps({
+            "schemaVersion": 2, "version": "1.6.9", "revision": "a" * 40,
+            "migrationTree": "b" * 40, "tag": V2_TAG, "sourceSha256": "9" * 64,
+            "images": V2_MANIFEST["images"],
+        }), encoding="utf-8")
+        with patch.object(deployer, "_github_release", return_value=(V2_TAG, self.urls)), \
+                patch.object(deployer, "_request", side_effect=self.request), \
+                patch.object(deployer, "_run", side_effect=self.fake_run), \
+                patch.object(deployer, "_verify_images"), \
+                patch.object(deployer, "_wait_health"):
+            self.assertEqual(deployer.deploy(self.cfg, self.state), 0)
+        self.assertFalse(any(args[:2] == ["docker", "run"] for args in self.commands))
+        activation = next(args for args in self.commands if args[:2] == ["docker", "compose"] and "up" in args)
+        self.assertEqual(activation[-1], "web")
+        self.assertNotIn("api", activation[activation.index("never") + 1:])
+
+    def test_configured_retention_verifies_backup_and_runs_after_receipt_write(self):
+        self.use_v2()
+        self.cfg["retention"] = {"enabled": True, "keep": 2, "pins": ["database-legacy.dump"]}
+        (self.state / "current.json").write_text(json.dumps({
+            "schemaVersion": 2, "version": "1.6.9", "revision": "a" * 40,
+            "migrationTree": "b" * 40, "tag": V2_TAG, "sourceSha256": "9" * 64,
+            "images": V2_MANIFEST["images"],
+        }), encoding="utf-8")
+        restored = {"result": "passed", "backupSha256": "1" * 64,
+                    "migrationTree": "b" * 40, "migrationCount": 139}
+        import restore_check
+        import retention
+        with patch.object(deployer, "_github_release", return_value=(V2_TAG, self.urls)), \
+                patch.object(deployer, "_request", side_effect=self.request), \
+                patch.object(deployer, "_run", side_effect=self.fake_run), \
+                patch.object(deployer, "_verify_images"), \
+                patch.object(deployer, "_wait_health"), \
+                patch.object(restore_check, "verify_backup", return_value=restored) as verify, \
+                patch.object(deployer, "_retention_image_inventory", return_value=([], [])), \
+                patch.object(retention, "plan_retention", return_value={"backupSha256": "1" * 64}) as plan, \
+                patch.object(retention, "apply_retention", return_value={"errors": [], "deleted": ["old.dump"]}) as apply:
+            self.assertEqual(deployer.deploy(self.cfg, self.state), 0)
+        current = json.loads((self.state / "current.json").read_text(encoding="utf-8"))
+        verify.assert_called_once()
+        self.assertEqual(verify.call_args.args[1:], ("b" * 40, deployer._source_file(self.root, V2_TAG), "9" * 64))
+        plan.assert_called_once()
+        apply.assert_called_once_with(plan.return_value, restored, "b" * 40, apply=True)
+        self.assertEqual(current["schemaVersion"], 2)
+        self.assertEqual(current["backupSourceTag"], V2_TAG)
+        self.assertEqual(current["backupSourceSha256"], "9" * 64)
+        self.assertEqual(current["sourceArchive"], str(deployer._source_file(self.root, V2_TAG)))
+
+    def test_retention_restore_failure_warns_without_rolling_back_healthy_release(self):
+        self.use_v2()
+        self.cfg["retention"] = {"enabled": True, "keep": 2, "pins": []}
+        (self.state / "current.json").write_text(json.dumps({
+            "schemaVersion": 2, "version": "1.6.9", "revision": "a" * 40,
+            "migrationTree": "b" * 40, "images": V2_MANIFEST["images"],
+        }), encoding="utf-8")
+        import restore_check
+        with patch.object(deployer, "_github_release", return_value=(V2_TAG, self.urls)), \
+                patch.object(deployer, "_request", side_effect=self.request), \
+                patch.object(deployer, "_run", side_effect=self.fake_run), \
+                patch.object(deployer, "_verify_images"), \
+                patch.object(deployer, "_wait_health"), \
+                patch.object(restore_check, "verify_backup", side_effect=deployer.DeployError("restore failed")), \
+                patch.object(deployer, "log") as logger:
+            self.assertEqual(deployer.deploy(self.cfg, self.state), 0)
+        self.assertTrue(any("WARNING: artifact retention" in call.args[0] for call in logger.call_args_list))
+        self.assertTrue((self.state / "current.json").exists())
+        self.assertEqual(self.up_count, 1)
 
     def test_failed_activation_restores_source_and_blocks_the_next_poll(self):
         with patch.object(deployer, "_github_release", return_value=(TAG, self.urls)), \
@@ -382,6 +551,21 @@ class HealthTests(unittest.TestCase):
             with self.assertRaisesRegex(deployer.DeployError, "differs"):
                 deployer.status({}, state)
             self.assertEqual(health.call_count, 1)
+
+    def test_status_retention_preview_failure_does_not_mask_healthy_runtime(self):
+        state = Path("unused-state")
+        current = {"version": "1.7.0", "revision": "a" * 40,
+                   "images": {"api": "api@digest", "web": "web@digest"}}
+        cfg = {"retention": {"enabled": True, "keep": 3, "pins": ["legacy.dump"]}}
+        with patch.object(deployer, "_read_state", side_effect=[current, {"current": None}]), \
+                patch.object(deployer, "_containers", return_value={"api": {"image": "image-id"}, "web": {"image": "image-id"}}), \
+                patch.object(deployer, "_run", return_value=b"image-id"), \
+                patch.object(deployer, "_wait_health") as health, \
+                patch.object(deployer, "_retention_image_inventory", side_effect=deployer.DeployError("inspect failed")), \
+                patch.object(deployer, "log") as logger:
+            self.assertEqual(deployer.status(cfg, state), 0)
+        health.assert_called_once()
+        self.assertTrue(any("WARNING: artifact retention preview" in call.args[0] for call in logger.call_args_list))
 
     def test_migration_duration_uses_only_the_entrypoint_timestamped_pair(self):
         self.assertEqual(deployer._migration_seconds(

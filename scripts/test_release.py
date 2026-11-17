@@ -5,10 +5,25 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from release import build_manifest, create_source_archive, validate_release, validate_candidate
+from release import build_manifest, build_component_manifest, create_source_archive, validate_release, validate_candidate
+from components import repository
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_component_candidate_preserves_older_provenance_and_third_image(self):
+        candidate = {"schemaVersion": 2, "version": "1.8.1", "revision": "a" * 40,
+                     "images": {name: repository(name) + "@sha256:" + "b" * 64
+                                for name in ("api", "web", "migrator")},
+                     "components": {name: {"version": "1.8.0", "revision": "c" * 40, "inputs": "d" * 64}
+                                    for name in ("api", "web", "migrator")}}
+        manifest = build_component_manifest(candidate, "tourmalet-v1.8.1", "e" * 40, "f" * 64)
+        self.assertEqual(manifest["schemaVersion"], 2)
+        self.assertEqual(manifest["components"], candidate["components"])
+        self.assertEqual(manifest["images"], candidate["images"])
+        invalid = {**candidate, "unexpected": "field"}
+        with self.assertRaises(ValueError):
+            validate_candidate(invalid, "1.8.1", "a" * 40)
+
     def test_candidate_is_bound_to_exact_release(self):
         candidate = dict(version="1.8.0", revision="a" * 40, api="sha256:" + "b" * 64, web="sha256:" + "c" * 64)
         self.assertEqual(validate_candidate(candidate, "1.8.0", "a" * 40), candidate)

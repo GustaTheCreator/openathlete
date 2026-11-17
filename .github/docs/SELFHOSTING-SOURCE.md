@@ -19,11 +19,13 @@ For a container build, first configure your private `.env` using the upstream se
 Supply your own privacy page at `public-privacy/index.html`, identifying your actual operator and data practices. It is mounted read-only at `/privacidade/`; the team's deployment-specific policy and configuration are not part of this repository.
 
 ```sh
-docker compose -f docker-compose.yml -f selfhost/docker-compose.source.yml build api web
+docker compose -f docker-compose.yml -f selfhost/docker-compose.source.yml build migrator api web
 docker compose -f docker-compose.yml -f selfhost/docker-compose.source.yml up -d
 ```
 
-The application contains the source link in its React footer. No startup script or injected floating link is required. The link opens this fork's release tag on GitHub.
+The source-build overlay runs the dedicated migrator before the API, which keeps its generated Prisma client but skips startup migrations. Build all three images together so a local migrator cannot lag behind the application.
+
+The React footer reads the source URL from the page's meta tag. The web container's startup hook sets that tag from optional `SOURCE_CODE_URL`, allowing an unchanged web image to link to the full installed release. Set it to the exact corresponding source tag when deploying a tagged build; the source overlay defaults to this fork's stable branch. The hook changes only `index.html`, never cached JavaScript assets. Native and hosted builds retain their build-time `VITE_SOURCE_CODE_URL` fallback.
 
 New accounts start as ATHLETE. Before issuing invitations on a fresh instance,
 follow [the initial administrator procedure](ROLE-POLICY.md#first-super-administrator)

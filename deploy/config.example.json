@@ -10,5 +10,10 @@
   "allowedMigrationTrees": [
     "REPLACE_WITH_APPROVED_MIGRATION_TREE_HASH"
   ],
-  "healthTimeoutSeconds": 90
+  "healthTimeoutSeconds": 90,
+  "retention": {
+    "enabled": false,
+    "keep": 5,
+    "pins": []
+  }
 }

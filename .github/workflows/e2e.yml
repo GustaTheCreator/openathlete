@@ -8,148 +8,177 @@ on:
         default: false
 
 jobs:
-  test:
-    # The production images (same Dockerfiles as releases) with PostgreSQL,
-    # Redis and the worker, tested through the API and a real browser
-    name: End-to-end tests
+  plan:
+    name: Select component builds
     runs-on: ubuntu-latest
-    env:
-      CANDIDATE: ${{ inputs.publish }}
+    permissions:
+      contents: read
+      actions: read
+      packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - id: version
-        run: echo "value=$(cat VERSION)" >> "$GITHUB_OUTPUT"
-      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        if: env.CANDIDATE == 'true'
+      - name: Bind components to their source inputs
+        env:
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          args=()
+          if [[ "$PUBLISH" == true ]]; then args+=(--publish); fi
+          python scripts/components.py plan --revision "$GITHUB_SHA" "${args[@]}" --output "$RUNNER_TEMP/component-plan.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: component-source-plan
+          path: ${{ runner.temp }}/component-plan.json
+          retention-days: 30
+          if-no-files-found: error
+
+  build:
+    name: Prepare ${{ matrix.component }} image
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: api
+            repository: api
+            dockerfile: apps/api/Dockerfile
+            target: runtime
+          - component: web
+            repository: web
+            dockerfile: apps/web/Dockerfile
+            target: runtime
+          - component: migrator
+            repository: api
+            dockerfile: apps/api/Dockerfile
+            target: migrator
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: component-source-plan
+          path: ${{ runner.temp }}
+      - id: component
+        name: Read component provenance
+        run: python scripts/components.py select --plan "$RUNNER_TEMP/component-plan.json" --component '${{ matrix.component }}' --output "$GITHUB_OUTPUT"
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550
+        if: inputs.publish
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
-
-      - id: api
-        name: Build API image
+        if: steps.component.outputs.build == 'true'
+      - name: Build changed component
+        id: image
+        if: steps.component.outputs.build == 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
         with:
           context: .
-          file: apps/api/Dockerfile
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
           platforms: linux/amd64
-          load: ${{ env.CANDIDATE != 'true' }}
-          push: ${{ env.CANDIDATE == 'true' }}
-          tags: ${{ env.CANDIDATE == 'true' && format('ghcr.io/gustathecreator/openathlete-api:candidate-{0}-{1}-{2}', github.sha, github.run_id, github.run_attempt) || 'openathlete-api:e2e' }}
+          push: ${{ inputs.publish }}
+          outputs: ${{ !inputs.publish && format('type=docker,dest={0}/openathlete-{1}.tar', runner.temp, matrix.component) || '' }}
+          tags: ${{ inputs.publish && format('ghcr.io/gustathecreator/openathlete-{0}:candidate-{1}-{2}-{3}-{4}', matrix.repository, matrix.component, github.sha, github.run_id, github.run_attempt) || format('openathlete-{0}:e2e', matrix.component) }}
           labels: |
             org.opencontainers.image.source=https://github.com/GustaTheCreator/openathlete
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ steps.version.outputs.value }}
-          cache-from: type=gha,scope=api
-          cache-to: type=gha,mode=max,scope=api
-
-      - id: web
-        name: Build web image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
-        with:
-          context: .
-          file: apps/web/Dockerfile
-          build-args: |
-            VITE_SOURCE_CODE_URL=https://github.com/GustaTheCreator/openathlete/tree/tourmalet-v${{ steps.version.outputs.value }}
-          platforms: linux/amd64
-          load: ${{ env.CANDIDATE != 'true' }}
-          push: ${{ env.CANDIDATE == 'true' }}
-          tags: ${{ env.CANDIDATE == 'true' && format('ghcr.io/gustathecreator/openathlete-web:candidate-{0}-{1}-{2}', github.sha, github.run_id, github.run_attempt) || 'openathlete-web:e2e' }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/GustaTheCreator/openathlete
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ steps.version.outputs.value }}
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,mode=max,scope=web
-
-      - uses: pnpm/action-setup@f53f5227a9e83886ab598c617f3c170fab62f0d3
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version-file: '.nvmrc'
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile --filter @openathlete/e2e...
-      - run: pnpm e2e exec playwright install --with-deps chromium
-
-      - name: Select production candidate digests
-        if: env.CANDIDATE == 'true'
+            org.opencontainers.image.revision=${{ steps.component.outputs.revision }}
+            org.opencontainers.image.version=${{ steps.component.outputs.version }}
+            org.openathlete.build-inputs=${{ steps.component.outputs.inputs }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+      - name: Reuse unchanged component
+        if: steps.component.outputs.build != 'true'
         env:
-          API_DIGEST: ${{ steps.api.outputs.digest }}
-          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+          IMAGE: ${{ steps.component.outputs.image }}
+          COMPONENT: ${{ matrix.component }}
+          PUBLISH: ${{ inputs.publish }}
         run: |
-          echo "API_IMAGE=ghcr.io/gustathecreator/openathlete-api@$API_DIGEST" >> "$GITHUB_ENV"
-          echo "WEB_IMAGE=ghcr.io/gustathecreator/openathlete-web@$WEB_DIGEST" >> "$GITHUB_ENV"
-      - name: Start the stack
-        run: docker compose -f e2e/docker-compose.yml up -d --no-build --wait
-      - name: Test changed specs first
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PLAYWRIGHT_HTML_REPORT: playwright-changed-report
-          E2E_JSON_REPORT: playwright-changed-results.json
-        run: |
-          python scripts/e2e_plan.py --base "$BASE_SHA" --head "$HEAD_SHA" --output "$RUNNER_TEMP/changed-e2e.txt"
-          if [[ -s "$RUNNER_TEMP/changed-e2e.txt" ]]; then
-            pnpm e2e test:e2e --test-list "$RUNNER_TEMP/changed-e2e.txt" --max-failures=1
+          docker pull "$IMAGE"
+          if [[ "$PUBLISH" != true ]]; then
+            docker tag "$IMAGE" "openathlete-$COMPONENT:e2e"
+            docker save --output "$RUNNER_TEMP/openathlete-$COMPONENT.tar" "openathlete-$COMPONENT:e2e"
           fi
-      - name: Test every remaining spec
-        run: |
-          if [[ -s "$RUNNER_TEMP/changed-e2e.txt" ]]; then
-            pnpm e2e test:e2e --test-list-invert "$RUNNER_TEMP/changed-e2e.txt" --pass-with-no-tests
-          else
-            pnpm e2e test:e2e
-          fi
-      - name: Record tested candidate
-        if: env.CANDIDATE == 'true'
+      - name: Record prepared image
         env:
-          VERSION: ${{ steps.version.outputs.value }}
-          API_DIGEST: ${{ steps.api.outputs.digest }}
-          WEB_DIGEST: ${{ steps.web.outputs.digest }}
-        run: |
-          jq -n --arg version "$VERSION" --arg revision "$GITHUB_SHA" --arg api "$API_DIGEST" --arg web "$WEB_DIGEST" '{version: $version, revision: $revision, api: $api, web: $web}' > "$RUNNER_TEMP/candidate.json"
+          COMPONENT: ${{ matrix.component }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: python scripts/components.py record --plan "$RUNNER_TEMP/component-plan.json" --component "$COMPONENT" --digest "$DIGEST" --output "$RUNNER_TEMP/component-$COMPONENT.json"
       - uses: actions/upload-artifact@v7
-        if: env.CANDIDATE == 'true'
         with:
-          name: tourmalet-candidate
+          name: built-component-${{ matrix.component }}
+          path: ${{ runner.temp }}/component-${{ matrix.component }}.json
+          retention-days: 30
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: ${{ !inputs.publish }}
+        with:
+          name: e2e-image-${{ matrix.component }}
+          path: ${{ runner.temp }}/openathlete-${{ matrix.component }}.tar
+          compression-level: 1
+          retention-days: 1
+          if-no-files-found: error
+
+  images:
+    name: Verify component source identities
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: component-source-plan
+          path: ${{ runner.temp }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: built-component-*
+          path: ${{ runner.temp }}/records
+          merge-multiple: true
+      - run: python scripts/components.py merge --plan "$RUNNER_TEMP/component-plan.json" --records "$RUNNER_TEMP/records" --output "$RUNNER_TEMP/candidate.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: e2e-images
           path: ${{ runner.temp }}/candidate.json
           retention-days: 30
           if-no-files-found: error
 
-      - name: Preserve diagnostics even after a successful retry
-        if: ${{ !cancelled() }}
-        run: |
-          docker compose -f e2e/docker-compose.yml logs --no-color --timestamps api worker web | python scripts/sanitize_ci_logs.py > e2e/service-logs.txt
+  regression:
+    name: Balanced full regression
+    needs: images
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    uses: ./.github/workflows/e2e-shards.yml
+    with:
+      publish: ${{ inputs.publish }}
 
-      - name: Record identity, test counts and phase timings
-        if: ${{ !cancelled() }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          API_DIGEST: ${{ steps.api.outputs.digest }}
-          WEB_DIGEST: ${{ steps.web.outputs.digest }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" > e2e/workflow-jobs.json || echo '{"jobs":[]}' > e2e/workflow-jobs.json
-          python scripts/ci_report.py --revision "$GITHUB_SHA" --version "$(cat VERSION)" \
-            --api-digest "$API_DIGEST" --web-digest "$WEB_DIGEST" --jobs e2e/workflow-jobs.json \
-            --report e2e/playwright-results.json --report e2e/playwright-changed-results.json \
-            --output e2e/verification-receipt.json --summary "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload Playwright report
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
+  candidate:
+    name: Record tested production candidate
+    needs: regression
+    if: inputs.publish
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          name: playwright-report
-          path: |
-            e2e/playwright-report
-            e2e/playwright-changed-report
-            e2e/test-results
-            e2e/playwright*-results.json
-            e2e/service-logs.txt
-            e2e/verification-receipt.json
-          retention-days: 14
-
-      - name: Stop the test stack
-        if: always()
-        run: docker compose -f e2e/docker-compose.yml down -v
+          fetch-depth: 0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: e2e-verification
+          path: ${{ runner.temp }}/verified
+      - run: python scripts/release.py candidate --input "$RUNNER_TEMP/verified/candidate.json" --revision "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tourmalet-candidate
+          path: ${{ runner.temp }}/verified/candidate.json
+          retention-days: 30
+          if-no-files-found: error

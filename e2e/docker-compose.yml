@@ -27,7 +27,7 @@ services:
       POSTGRES_USER: oa
       POSTGRES_PASSWORD: oa
       POSTGRES_DB: oa
-    ports: ['127.0.0.1:15435:5432']
+    ports: ['127.0.0.1:${E2E_POSTGRES_PORT:-15435}:5432']
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U oa -d oa']
       interval: 3s
@@ -40,13 +40,26 @@ services:
       interval: 3s
       retries: 20
 
+  migrator:
+    image: ${MIGRATOR_IMAGE:-openathlete-migrator:e2e}
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: migrator
+    environment:
+      DATABASE_URL: postgresql://oa:oa@postgres:5432/oa?schema=public
+    depends_on:
+      postgres: { condition: service_healthy }
+
   api:
     image: ${API_IMAGE:-openathlete-api:e2e}
     build:
       context: ..
       dockerfile: apps/api/Dockerfile
+      target: runtime
     environment:
       <<: *api-env
+      SKIP_MIGRATIONS: 'true'
       # Background jobs run in the worker, as in production
       ENABLE_ACTIVITY_IMPORT: 'false'
       ENABLE_ACTIVITY_PROCESSING: 'false'
@@ -56,11 +69,12 @@ services:
       OIDC_CLIENT_ID: openathlete-e2e
       OIDC_CLIENT_SECRET: e2e-oidc-secret
       OIDC_NAME: Fake IdP
-    ports: ['127.0.0.1:13000:3000']
+    ports: ['127.0.0.1:${E2E_API_PORT:-13000}:3000']
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       fake-oidc: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   worker:
     image: ${API_IMAGE:-openathlete-api:e2e}
@@ -72,6 +86,7 @@ services:
       ENABLE_TRAINING_LOAD_ESTIMATION: 'false'
     depends_on:
       api: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
 
   # OpenAI-compatible stand-in for AI providers (see fake-llm/server.mjs)
   fake-llm:
@@ -102,9 +117,11 @@ services:
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
+    environment:
+      SOURCE_CODE_URL: ${SOURCE_CODE_URL:-https://github.com/GustaTheCreator/openathlete/tree/tourmalet}
     # No API_PUBLIC_URL: the app reaches the API through the image's /api
     # proxy, as in the self-hosting setup
-    ports: ['127.0.0.1:18080:80']
+    ports: ['127.0.0.1:${E2E_WEB_PORT:-18080}:80']
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO /dev/null http://127.0.0.1/ || exit 1']
       interval: 3s

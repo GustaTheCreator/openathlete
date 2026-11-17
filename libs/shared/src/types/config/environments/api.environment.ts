@@ -101,6 +101,20 @@ export const ApiEnvSchema = z
         'Public URL of the API, where AI agents reach the MCP server and its OAuth endpoints. Defaults to APP_URL/api, as in the Docker Compose setup',
       ),
 
+    SOURCE_CODE_URL: z
+      .string()
+      .optional()
+      .refine(
+        (value) =>
+          value === undefined ||
+          /^\/(?!\/)[A-Za-z0-9._~/-]*$/.test(value) ||
+          (/^https:\/\/[A-Za-z0-9._~:/?#@!$()*+,;=%-]+$/.test(value) &&
+            z.string().url().safeParse(value).success &&
+            value.startsWith('https://')),
+        'SOURCE_CODE_URL must be an HTTPS URL or a root-relative path',
+      )
+      .describe('Source-code URL shown in the web instance footer (optional)'),
+
     CORS_ORIGINS: z
       .string()
       .optional()

@@ -15,7 +15,7 @@ from typing import Any
 
 from deployer import DeployError, REPOSITORY_URL, _github_release, _request, parse_version, validate_manifest
 
-IMAGE = re.compile(r"^ghcr\.io/gustathecreator/openathlete-api@sha256:[a-f0-9]{64}$")
+IMAGE = re.compile(r"^ghcr\.io/gustathecreator/openathlete-(?:api|migrator)@sha256:[a-f0-9]{64}$")
 REVISION = re.compile(r"^[a-f0-9]{40}$")
 FIXTURE = "workflow-migration-rehearsal-v1"
 POSTGRES_IMAGE = "pgvector/pgvector:pg17"
@@ -33,7 +33,7 @@ def baseline_for(revision: str) -> dict[str, str]:
     tag, urls = found
     manifest = validate_manifest(json.loads(_request(urls["manifest"], 100_000)), tag, urls["source"])
     return {"rehearsal-needed": str(manifest["migrationTree"] != tree).lower(),
-            "base-api-image": manifest["images"]["api"]}
+            "base-api-image": manifest["images"].get("migrator", manifest["images"]["api"])}
 
 
 def _run(args: list[str], *, input_data: bytes | None = None, timeout: int = 180) -> bytes:
@@ -207,8 +207,8 @@ def rehearse(base_image: str, candidate_image: str, output: Path | None = None) 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-api-image")
-    parser.add_argument("--candidate-api-image")
+    parser.add_argument("--base-api-image", "--base-image", dest="base_api_image")
+    parser.add_argument("--candidate-api-image", "--candidate-image", dest="candidate_api_image")
     parser.add_argument("--baseline-for")
     parser.add_argument("--github-output", type=Path)
     parser.add_argument("--json-output", type=Path)

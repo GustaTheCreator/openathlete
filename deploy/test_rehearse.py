@@ -7,6 +7,13 @@ from deployer import DeployError
 
 
 class ImageIdentityTests(unittest.TestCase):
+    def test_dedicated_migrator_is_an_allowed_immutable_rehearsal_image(self):
+        image = "ghcr.io/gustathecreator/openathlete-migrator@sha256:" + "a" * 64
+        labels = {"org.opencontainers.image.source": rehearse.REPOSITORY_URL,
+                  "org.opencontainers.image.revision": "b" * 40, "org.opencontainers.image.version": "1.8.0"}
+        with patch.object(rehearse, "_run", side_effect=[json.dumps(labels).encode(), b"c" * 40]):
+            self.assertEqual(rehearse._image_identity(image)["image"], image)
+
     def test_only_a_changed_migration_tree_requires_release_rehearsal(self):
         image = "ghcr.io/gustathecreator/openathlete-api@sha256:" + "a" * 64
         with patch.object(rehearse, "_run", return_value=b"b" * 40), \

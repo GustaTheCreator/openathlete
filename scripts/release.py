@@ -7,7 +7,11 @@ import hashlib
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "deploy"))
+from artifacts import image_digest, image_refs, names, validate_v2
 
 REPOSITORY = "https://github.com/GustaTheCreator/openathlete"
 IMAGE_PREFIX = "ghcr.io/gustathecreator/openathlete"
@@ -21,6 +25,10 @@ def validate_candidate(candidate: dict, version: str, revision: str) -> dict:
         raise ValueError("Invalid candidate identity")
     if candidate.get("version") != version or candidate.get("revision") != revision:
         raise ValueError("Candidate does not match the release version and revision")
+    if candidate.get("schemaVersion") == 2:
+        if set(candidate) != {"schemaVersion", "version", "revision", "images", "components"}:
+            raise ValueError("Candidate fields differ from the component schema")
+        return validate_v2(candidate)
     for component in ("api", "web"):
         if not re.fullmatch(r"sha256:[0-9a-f]{64}", candidate.get(component, "")):
             raise ValueError("Invalid candidate image digest")
@@ -119,6 +127,16 @@ def build_manifest(
     }
 
 
+def build_component_manifest(candidate, tag, migration_tree, source_sha256):
+    candidate = validate_candidate(candidate, candidate["version"], candidate["revision"])
+    if tag != f"tourmalet-v{candidate['version']}" or not re.fullmatch(r"[a-f0-9]{40}", migration_tree):
+        raise ValueError("Invalid component release tag or migration tree")
+    if not SHA256.fullmatch(source_sha256):
+        raise ValueError("Invalid source archive checksum")
+    return {**candidate, "tag": tag, "migrationTree": migration_tree,
+            "source": {"url": f"{REPOSITORY}/releases/download/{tag}/openathlete-{tag}.tar.gz", "sha256": source_sha256}}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -150,8 +168,9 @@ def main() -> None:
     manifest.add_argument("--tag", required=True)
     manifest.add_argument("--revision", required=True)
     manifest.add_argument("--migration-tree", required=True)
-    manifest.add_argument("--api-digest", required=True)
-    manifest.add_argument("--web-digest", required=True)
+    manifest.add_argument("--api-digest")
+    manifest.add_argument("--web-digest")
+    manifest.add_argument("--candidate", type=Path)
     manifest.add_argument("--source-sha256", required=True)
     manifest.add_argument("--output", type=Path, required=True)
 
@@ -164,22 +183,24 @@ def main() -> None:
             json.loads(args.input.read_text(encoding="utf-8")),
             args.version_file.read_text(encoding="utf-8").strip(), args.revision,
         )
-        for component in ("api", "web"):
-            print(f"{component}-digest={candidate[component]}")
+        if candidate.get("schemaVersion") == 2:
+            from components import verify_provenance
+            verify_provenance(candidate)
+        for component in names(candidate):
+            print(f"{component}-digest={image_digest(candidate, component)}")
     elif args.command == "source":
         archive, digest = create_source_archive(args.tag, args.revision, args.output_dir)
         print(f"{archive}\n{digest}")
     else:
         version = args.version_file.read_text(encoding="utf-8").strip()
-        manifest = build_manifest(
-            version,
-            args.tag,
-            args.revision,
-            args.migration_tree,
-            args.api_digest,
-            args.web_digest,
-            args.source_sha256,
-        )
+        if args.candidate:
+            candidate = validate_candidate(json.loads(args.candidate.read_text()), version, args.revision)
+            if candidate.get("schemaVersion") != 2 or args.api_digest or args.web_digest:
+                raise ValueError("Component manifest requires exactly one version-2 candidate")
+            manifest = build_component_manifest(candidate, args.tag, args.migration_tree, args.source_sha256)
+        else:
+            manifest = build_manifest(version, args.tag, args.revision, args.migration_tree,
+                                      args.api_digest, args.web_digest, args.source_sha256)
         args.output.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 

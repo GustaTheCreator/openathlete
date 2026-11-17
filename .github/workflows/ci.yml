@@ -121,7 +121,7 @@ jobs:
 
   e2e:
     name: End-to-end tests
-    needs: changes
+    needs: [changes, lint, type-check]
     if: needs.changes.outputs.app == 'true' && needs.changes.outputs.candidate != 'true'
     permissions:
       actions: read
