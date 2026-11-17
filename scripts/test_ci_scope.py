@@ -1,9 +1,15 @@
 import unittest
 
-from ci_scope import CHECKS, classify, required_checks_pass
+from ci_scope import CHECKS, TIMEZONES, classify, required_checks_pass, timezones
 
 
 class ScopeTests(unittest.TestCase):
+    def test_only_inert_web_assets_can_reduce_timezone_coverage(self):
+        self.assertEqual(timezones(["apps/web/src/index.css", "apps/web/public/icon.svg"]), ["UTC"])
+        for paths in [None, [], ["apps/web/src/calendar.tsx"], ["apps/web/src/index.css", "libs/shared/src/date.ts"],
+                      ["apps/web/src/a.css", "apps/web/src/old.ts"], ["new-package/a.css"], ["VERSION"]]:
+            self.assertEqual(timezones(paths), TIMEZONES, paths)
+
     def test_docs_and_website_are_isolated(self):
         self.assertFalse(any(classify(["README.md"]).values()))
         self.assertEqual(classify(["apps/docs/content/intro.mdx"]), dict(app=False, website=False, docs=True, deploy=False))
@@ -23,13 +29,13 @@ class ScopeTests(unittest.TestCase):
     def test_gate_rejects_missing_failed_cancelled_or_unexpected_skips(self):
         results = {"changes": {"result": "success", "outputs": dict.fromkeys(CHECKS, "false")}}
         results["changes"]["outputs"]["candidate"] = "false"
-        jobs = ["lint", "type-check", "test", "integration", "e2e", "agents", "website", "docs", "deploy-tests"]
+        jobs = ["lint", "type-check", "test", "integration", "e2e", "website", "docs", "deploy-tests"]
         results.update({job: {"result": "skipped"} for job in jobs})
         results["candidate"] = {"result": "skipped"}
         self.assertTrue(required_checks_pass(results))
         results["changes"]["outputs"]["app"] = "true"
         self.assertFalse(required_checks_pass(results))
-        for job in jobs[:6]:
+        for job in jobs[:5]:
             results[job]["result"] = "success"
         self.assertTrue(required_checks_pass(results))
         results["changes"]["outputs"]["candidate"] = "true"

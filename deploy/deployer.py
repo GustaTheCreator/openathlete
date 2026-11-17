@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+from contextlib import contextmanager
+from datetime import datetime
 try:
     import fcntl
 except ImportError:  # Windows is supported for local validation, not server deployment.
@@ -38,6 +40,51 @@ class DeployError(RuntimeError):
 
 def log(message: str) -> None:
     print(message, flush=True)
+
+
+@contextmanager
+def _timed_phase(timings: dict[str, float], name: str):
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        timings[name] = round(time.monotonic() - started, 3)
+        log(json.dumps({"event": "deploy_phase", "phase": name, "seconds": timings[name]}, sort_keys=True))
+
+
+def _backup_retention(state: Path, keep: int = 5) -> dict[str, Any]:
+    """Report old database dumps while preserving both deployed recovery receipts."""
+    if keep < 1:
+        raise DeployError("At least one recent database backup must be retained")
+    backups = sorted((state / "backups").glob("database-*.dump"), key=lambda path: path.stat().st_mtime, reverse=True)
+    protected: set[str] = set()
+    current = _read_state(state / "current.json") or {}
+    previous = _read_state(state / "previous.json") or {}
+    for receipt in (current, previous.get("current") or {}):
+        backup = receipt.get("backup")
+        if isinstance(backup, str):
+            protected.add(Path(backup).name)
+    retained = {path.name for path in backups[:keep]} | protected
+    eligible = [path.name for path in backups if path.name not in retained]
+    preserved = sorted(retained & {path.name for path in backups})
+    return {"total": len(backups), "preserved": preserved, "eligible": eligible}
+
+
+def _migration_seconds(output: str) -> float | None:
+    started = None
+    for line in output.splitlines():
+        match = re.fullmatch(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ) (Running prisma migrate deploy\.\.\.|Migrations completed successfully)", line)
+        if not match:
+            continue
+        try:
+            timestamp = datetime.fromisoformat(match[1].replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if match[2].startswith("Running"):
+            started = timestamp
+        elif started:
+            return max(0, (timestamp - started).total_seconds())
+    return None
 
 
 def _request(url: str, limit: int = 2_000_000) -> bytes:
@@ -402,22 +449,30 @@ def _restore(cfg: dict[str, Any], state: Path, snapshot: dict[str, Any]) -> None
 
 
 def deploy(cfg: dict[str, Any], state: Path) -> int:
-    manifest, message = _check_release(cfg, state)
+    started = time.monotonic()
+    timings: dict[str, float] = {}
+    with _timed_phase(timings, "release_validation"):
+        manifest, message = _check_release(cfg, state)
     if not manifest:
         log(message)
         return 0
     log(message)
     # All trust and migration gates above run before pull, backup, or container changes.
-    for digest in manifest["images"].values():
-        _run(["docker", "pull", digest], timeout=600)
-    _verify_images(manifest)
-    archive = _request(manifest["source"]["url"], 100_000_000)
-    _verify_archive(archive, manifest["source"]["sha256"])
+    with _timed_phase(timings, "image_pull"):
+        for digest in manifest["images"].values():
+            _run(["docker", "pull", digest], timeout=600)
+    with _timed_phase(timings, "image_verification"):
+        _verify_images(manifest)
+    with _timed_phase(timings, "source_download_and_verification"):
+        archive = _request(manifest["source"]["url"], 100_000_000)
+        _verify_archive(archive, manifest["source"]["sha256"])
 
     state.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(state, 0o700)
-    snapshot = _snapshot(cfg, state)
-    backup = _backup_database(cfg, state)
+    with _timed_phase(timings, "application_snapshot"):
+        snapshot = _snapshot(cfg, state)
+    with _timed_phase(timings, "database_backup"):
+        backup = _backup_database(cfg, state)
     root = Path(cfg["root"])
     source_path = _source_file(root, manifest["tag"])
     source_path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
@@ -435,8 +490,10 @@ def deploy(cfg: dict[str, Any], state: Path) -> int:
         _write_private(state / "release.json", _make_override(root, manifest))
         _write_private(state / "previous.json", (json.dumps(snapshot, sort_keys=True) + "\n").encode())
         activation_started = True
-        _run(_compose(cfg, state, "up", "-d", "--no-deps", "--no-build", "--pull", "never", "api", "web"))
-        _wait_health(cfg, state)
+        with _timed_phase(timings, "container_activation"):
+            _run(_compose(cfg, state, "up", "-d", "--no-deps", "--no-build", "--pull", "never", "api", "web"))
+        with _timed_phase(timings, "health_wait"):
+            _wait_health(cfg, state)
         after = _snapshot(cfg, state)
         if after["envSha256"] != snapshot["envSha256"]:
             raise DeployError("Private environment file changed during deployment")
@@ -444,9 +501,19 @@ def deploy(cfg: dict[str, Any], state: Path) -> int:
         after_other = {name: item for name, item in after["containers"].items() if name not in {"api", "web"}}
         if before_other != after_other:
             raise DeployError("An unrelated Compose service changed during deployment")
+        migration_seconds = None
+        api = after["containers"].get("api", {})
+        if api.get("id") and api.get("startedAt"):
+            try:
+                startup = _run(["docker", "logs", "--since", api["startedAt"], api["id"]], timeout=10)
+                migration_seconds = _migration_seconds(startup.decode(errors="replace"))
+            except DeployError:
+                pass  # Startup metrics must not roll back an otherwise healthy deployment.
         current = {"version": manifest["version"], "revision": manifest["revision"], "migrationTree": manifest["migrationTree"],
                    "tag": manifest["tag"], "images": manifest["images"], "sourceSha256": manifest["source"]["sha256"],
-                   "manifestFingerprint": _manifest_fingerprint(manifest), "backup": str(backup), "deployedAt": int(time.time())}
+                   "manifestFingerprint": _manifest_fingerprint(manifest), "backup": str(backup), "deployedAt": int(time.time()),
+                   "phaseTimingsSeconds": timings, "databaseMigrationSeconds": migration_seconds,
+                   "deployElapsedSeconds": round(time.monotonic() - started, 3)}
         _write_private(state / "current.json", (json.dumps(current, sort_keys=True) + "\n").encode())
     except Exception:
         rejection_failure = None
@@ -463,6 +530,7 @@ def deploy(cfg: dict[str, Any], state: Path) -> int:
             raise DeployError("Deployment was rolled back, but the failed-release retry guard could not be saved") from rejection_failure
         raise
     log(f"Deployed {manifest['version']} ({manifest['revision'][:12]}); database backup: {backup.name}.")
+    log("Deploy phase timings (seconds): " + json.dumps(timings, sort_keys=True))
     return 0
 
 
@@ -487,14 +555,27 @@ def rollback(cfg: dict[str, Any], state: Path) -> int:
     return 0
 
 
-def status(state: Path) -> int:
+def status(cfg: dict[str, Any], state: Path) -> int:
     current = _read_state(state / "current.json")
     if not current:
         log("No automated release has been deployed yet.")
     else:
+        containers = _containers(cfg, state)
+        for service in ("api", "web"):
+            expected = _run(["docker", "image", "inspect", current["images"][service], "--format", "{{.Id}}"]).decode().strip()
+            if containers.get(service, {}).get("image") != expected:
+                raise DeployError(f"Running {service} image differs from the deployed release receipt")
+        _wait_health(cfg, state)
         log(f"Version: {current.get('version')}\nRevision: {current.get('revision')}\nTag: {current.get('tag')}\n"
             f"Images: {json.dumps(current.get('images', {}), sort_keys=True)}\n"
+            f"Deploy elapsed: {current.get('deployElapsedSeconds', 'unavailable')} seconds\n"
+            f"Phase timings: {json.dumps(current.get('phaseTimingsSeconds', {}), sort_keys=True)}\n"
+            f"Database migration seconds: {current.get('databaseMigrationSeconds', 'unavailable')}\n"
+            "Runtime: healthy; image digests verified\n"
             f"Source SHA-256: {current.get('sourceSha256')}\nDeployed: {current.get('deployedAt')}")
+    report = _backup_retention(state)
+    log(f"Database backup retention dry-run: {report['total']} found; "
+        f"preserved={json.dumps(report['preserved'])}; eligible={json.dumps(report['eligible'])}; no files removed.")
     return 0
 
 
@@ -519,7 +600,7 @@ def main(argv: list[str] | None = None) -> int:
                 return deploy(cfg, state)
             if args.command == "rollback":
                 return rollback(cfg, state)
-            return status(state)
+            return status(cfg, state)
     except BlockingIOError:
         log("Another deployment command is already running.")
         return 2

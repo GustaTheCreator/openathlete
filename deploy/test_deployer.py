@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 import copy
@@ -137,6 +138,30 @@ class FilesystemTests(unittest.TestCase):
             if hasattr(deployer.os, "fchmod"):
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
+    def test_backup_retention_dry_run_preserves_active_and_previous_receipts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp) / ".deploy"
+            backups = state / "backups"
+            backups.mkdir(parents=True)
+            names = [f"database-{index}.dump" for index in range(7)]
+            for index, name in enumerate(names):
+                path = backups / name
+                path.write_bytes(b"synthetic")
+                path.touch()
+                path.chmod(0o600)
+                os.utime(path, (index + 1, index + 1))
+            (state / "current.json").write_text(json.dumps({"backup": str(backups / names[0])}), encoding="utf-8")
+            (state / "previous.json").write_text(json.dumps({"current": {"backup": str(backups / names[1])}}), encoding="utf-8")
+            report = deployer._backup_retention(state, keep=3)
+            self.assertEqual(report["total"], 7)
+            self.assertEqual(set(report["preserved"]), {names[0], names[1], names[4], names[5], names[6]})
+            self.assertEqual(report["eligible"], [names[3], names[2]])
+            self.assertTrue(all((backups / name).exists() for name in names))
+
+    def test_backup_retention_requires_at_least_one_recent_backup(self):
+        with self.assertRaisesRegex(deployer.DeployError, "At least one"):
+            deployer._backup_retention(Path("unused"), keep=0)
+
 
 class DeploymentFlowTests(unittest.TestCase):
     def setUp(self):
@@ -166,6 +191,9 @@ class DeploymentFlowTests(unittest.TestCase):
 
     def fake_run(self, args, **kwargs):
         self.commands.append(list(args))
+        if args[:2] == ["docker", "logs"]:
+            return (b"2026-11-17T12:00:01Z Running prisma migrate deploy...\n"
+                    b"2026-11-17T12:00:04Z Migrations completed successfully\n")
         if args[:2] == ["docker", "pull"]:
             self.pull_count += 1
             return b"pulled"
@@ -267,6 +295,13 @@ class DeploymentFlowTests(unittest.TestCase):
             health.side_effect = [None, None]
             self.assertEqual(deployer.deploy(self.cfg, self.state), 0)
             active = json.loads((self.state / "current.json").read_text(encoding="utf-8"))
+            self.assertIn("phaseTimingsSeconds", active)
+            self.assertIn("deployElapsedSeconds", active)
+            self.assertIn("database_backup", active["phaseTimingsSeconds"])
+            self.assertIn("container_activation", active["phaseTimingsSeconds"])
+            self.assertIn("health_wait", active["phaseTimingsSeconds"])
+            self.assertEqual(active["databaseMigrationSeconds"], 3)
+            self.assertGreaterEqual(active["deployElapsedSeconds"], 0)
             self.assertEqual(active["manifestFingerprint"], deployer._manifest_fingerprint(self.manifest))
             self.assertEqual(active["images"], self.manifest["images"])
             self.assertEqual(active["sourceSha256"], self.manifest["source"]["sha256"])
@@ -333,6 +368,27 @@ class DeploymentFlowTests(unittest.TestCase):
 
 
 class HealthTests(unittest.TestCase):
+    def test_status_rechecks_live_images_and_health_instead_of_trusting_receipt(self):
+        state = Path("unused-state")
+        current = {"version": "1.7.3", "revision": "a" * 40, "images": {"api": "api@digest", "web": "web@digest"}}
+        with patch.object(deployer, "_read_state", return_value=current), \
+                patch.object(deployer, "_containers", return_value={"api": {"image": "image-id"}, "web": {"image": "image-id"}}) as containers, \
+                patch.object(deployer, "_run", return_value=b"image-id"), \
+                patch.object(deployer, "_wait_health") as health, \
+                patch.object(deployer, "log"):
+            self.assertEqual(deployer.status({}, state), 0)
+            health.assert_called_once()
+            containers.return_value["api"]["image"] = "drifted"
+            with self.assertRaisesRegex(deployer.DeployError, "differs"):
+                deployer.status({}, state)
+            self.assertEqual(health.call_count, 1)
+
+    def test_migration_duration_uses_only_the_entrypoint_timestamped_pair(self):
+        self.assertEqual(deployer._migration_seconds(
+            "unrelated private log ignored\n2026-11-17T12:00:01Z Running prisma migrate deploy...\n"
+            "2026-11-17T12:00:04Z Migrations completed successfully\n"), 3)
+        self.assertIsNone(deployer._migration_seconds("Skipping database migrations"))
+
     def test_api_probe_failure_times_out_instead_of_marking_api_healthy(self):
         cfg = {"healthTimeoutSeconds": 15}
         state = Path("unused-state")

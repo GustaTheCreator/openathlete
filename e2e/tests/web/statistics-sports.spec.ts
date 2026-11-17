@@ -403,41 +403,46 @@ test('a coach reads the statistics of their athlete', async ({
   expect(problems).toEqual([]);
 });
 
-for (const [locale, section] of [
+const STATISTICS_LOCALES = [
   ['fr', 'Régularité'],
   ['it', 'Regolarità'],
   ['es', 'Regularidad'],
   ['pt-BR', 'Regularidade'],
-]) {
-  test(`every statistics text exists in ${locale}`, async ({
-    page,
-    request,
-    context,
-  }) => {
-    test.setTimeout(60_000);
-    await prepare(page, request, weeks(2, run));
-    await context.addCookies([
-      { name: 'OA_LOCALE', value: locale, url: WEB_URL },
-    ]);
-    await open(page, 'sport=RUNNING');
-    await expect(
-      page.getByRole('heading', { name: section, exact: true }),
-    ).toBeVisible();
-    // Paraglide falls back on the key's name when a message is missing
-    for (const query of [
-      'view=load',
-      'view=trends',
-      'view=capacities',
-      'view=capacities&capacity=terrain',
-      'view=capacities&capacity=endurance',
-      'view=capacities&capacity=physiology',
-      'view=capacities&capacity=performance',
-      'view=review',
-    ]) {
-      await open(page, `sport=RUNNING&${query}`);
-      await expect(page.locator('body')).not.toContainText(
-        /statistics_|metric_/,
-      );
-    }
-  });
-}
+];
+
+test('every statistics text exists in each supported locale', async ({
+  page,
+  request,
+  context,
+}) => {
+  test.setTimeout(60_000);
+  await prepare(page, request, weeks(2, run));
+
+  for (const [locale, section] of STATISTICS_LOCALES) {
+    await test.step(locale, async () => {
+      await context.addCookies([
+        { name: 'OA_LOCALE', value: locale, url: WEB_URL },
+      ]);
+      await open(page, 'sport=RUNNING');
+      await expect(
+        page.getByRole('heading', { name: section, exact: true }),
+      ).toBeVisible();
+      // Paraglide falls back on the key's name when a message is missing
+      for (const query of [
+        'view=load',
+        'view=trends',
+        'view=capacities',
+        'view=capacities&capacity=terrain',
+        'view=capacities&capacity=endurance',
+        'view=capacities&capacity=physiology',
+        'view=capacities&capacity=performance',
+        'view=review',
+      ]) {
+        await open(page, `sport=RUNNING&${query}`);
+        await expect(page.locator('body')).not.toContainText(
+          /statistics_|metric_/,
+        );
+      }
+    });
+  }
+});

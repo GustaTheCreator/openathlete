@@ -52,7 +52,7 @@ python -m unittest discover -s deploy -p 'test_*.py' -v
    The workflow rejects a tag that does not match `VERSION`, is not annotated, points to another commit, or whose commit is not reachable from `origin/tourmalet`. It also requires a successful `push` CI run for that exact commit on `tourmalet`. Do not move or reuse a release tag. The `tourmalet-v` prefix keeps this workflow separate from the upstream `v*` publisher.
 
 4. The stable push CI builds the `linux/amd64` API and web candidates, sets their final version/revision labels and source-tag footer, pushes them under unique candidate tags, and runs the full E2E suite against the registry digests. Only after that suite passes does it upload `tourmalet-candidate`. The release validates its version and revision, then adds version/SHA tags to the same digests without rebuilding. Existing tags are accepted only when their digest is identical, allowing a failed promotion to resume without replacing an image.
-5. A short smoke job pulls those exact digests into a fresh stack, runs migrations through normal startup, checks service health, exercises account creation/login and checks the source footer. The full regression has already tested these exact images in the successful stable CI. Reports and traces are retained for CI and release failures/retries.
+5. A short smoke job pulls those exact digests into a fresh stack, runs migrations through normal startup, checks service health, exercises account creation/login and checks the source footer. When the migration tree differs from the previous published stable manifest, the job also rehearses the upgrade and backup restoration against disposable PostgreSQL containers with synthetic data. It never changes the server's migration allowlist. The full regression has already tested these exact images in the successful stable CI. Reports, phase timings, identity receipts and traces are retained for CI and release failures/retries.
 6. After smoke passes, the workflow creates the public `tourmalet-release.json` manifest and the AGPL source archive from that tagged commit. It uploads both to a draft GitHub release, then publishes the release. The manifest pins image digests and includes the migration-tree object ID and source-archive SHA-256.
 
 Do not put `.env` files, server configuration, passwords, API keys, SMTP credentials, or other private data in the repository or container image. Release validation uses the built-in GitHub token with `actions: read` and `contents: read`; only image publishing receives `packages: write`, and only release publishing receives `contents: write`.
@@ -66,3 +66,39 @@ The Tourmalet server updater reads published GitHub releases and the accompanyin
 For an approved release, the updater backs up the database and current source snapshot before changing the Compose image references. It waits for service health and restores the prior application snapshot if activation fails. Database rollback is not automatic: migrations must be reviewed for compatibility, and restoring a database backup is an operator decision because it discards writes made after the backup.
 
 Use the updater's `check`, `status`, `deploy`, and `rollback` commands on the server. `check` validates the latest release without pulling images or changing containers. Keep server paths, environment variables, credentials, and network details in private server configuration; do not copy them into this document or the public repository.
+
+`status` now verifies the running API/web image IDs against the recorded digest references and waits for actual service health. It fails on drift or unhealthy services. It also reports deployment phases and previews database-backup retention: preserve the latest five dumps plus any dump referenced by the current or previous recovery receipt. The preview does not remove files or prune Docker images. Source archives and images remain retained; applying cleanup requires a separate reviewed operator action.
+
+Receipts record monotonic durations for release validation, pulls, image verification, source download/verification, snapshot, database backup, container activation and health wait. `databaseMigrationSeconds` comes from the existing timestamped entrypoint start/completion messages. It is an observed sub-interval of startup, not an additional phase to sum, and is unavailable when migrations were skipped or the log pair is missing. Missing optional timing does not roll back a healthy deployment.
+
+## Isolated migration and recovery rehearsal
+
+Use immutable API image references from published manifests or tested candidates:
+
+```sh
+python deploy/rehearse.py --base-api-image "$BASE_API_IMAGE" \
+  --candidate-api-image "$CANDIDATE_API_IMAGE" --json-output rehearsal.json
+```
+
+The command requires Docker and the image revisions in local Git history. It creates its own internal network and two disposable PostgreSQL containers, applies baseline migrations, inserts a public synthetic sentinel, makes a dump, runs candidate migrations, restores the dump into an empty database and repeats the upgrade. It verifies the fixture and migration state, records image/revision/tree/checksum results and removes only resources it created. It never reads the server configuration, connects to the production database or grants migration approval.
+
+Using an unchanged tree or the same image is a recovery positive control; it does not validate a changed schema or real production data. A migration-bearing release still needs review of data compatibility and, where required, an operator-controlled rehearsal on an appropriately protected restored copy before approving its tree.
+
+## One delivery command
+
+After a reviewed PR contains the intended `VERSION`, preview the delivery:
+
+```sh
+python scripts/deliver.py --pr 123 --receipt delivery.json
+```
+
+For an already authorized publication, add `--apply`. The command pins the PR head, waits for `CI passed`, squashes that exact head, waits for a successful stable **push** CI for the resulting commit, validates its candidate, creates an annotated immutable version tag and waits for the published release/manifest. It can resume a matching merged PR or tag; failures never move tags or replace image identities. It does not edit source or versions for the operator.
+
+An authorized server update can use the existing updater through runtime arguments:
+
+```sh
+python scripts/deliver.py --pr 123 --apply --receipt delivery.json \
+  --ssh-target "$DEPLOY_SSH_ALIAS" --deploy-command "$DEPLOY_UPDATER_COMMAND"
+```
+
+Upgrade the installed updater from the tested revision before using this option: the delivery command requires its fresh runtime-verification marker, not just an old saved receipt. Keep aliases and executable paths in private operational instructions. The command verifies the installed version/revision/digests against the tested candidate; the updater preserves its backup, approval, health and rollback guards. The JSON delivery receipt is the common technical record; Obsidian records decisions and any remaining limits without copying secrets.
