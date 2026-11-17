@@ -160,9 +160,8 @@ jobs:
       publish: ${{ inputs.publish }}
 
   candidate:
-    name: Record tested production candidate
+    name: Verify tested candidate metadata
     needs: regression
-    if: inputs.publish
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -170,13 +169,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 0
+          fetch-depth: ${{ inputs.publish && '0' || '1' }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: e2e-verification
           path: ${{ runner.temp }}/verified
-      - run: python scripts/release.py candidate --input "$RUNNER_TEMP/verified/candidate.json" --revision "$GITHUB_SHA"
+      - name: Validate PR artifact layout and schema
+        if: ${{ !inputs.publish }}
+        run: python scripts/components.py env --input "$RUNNER_TEMP/verified/candidate.json" --output "$RUNNER_TEMP/verified.env"
+      - name: Validate protected production candidate
+        if: inputs.publish
+        run: python scripts/release.py candidate --input "$RUNNER_TEMP/verified/candidate.json" --revision "$GITHUB_SHA"
       - uses: actions/upload-artifact@v7
+        if: inputs.publish
         with:
           name: tourmalet-candidate
           path: ${{ runner.temp }}/verified/candidate.json
