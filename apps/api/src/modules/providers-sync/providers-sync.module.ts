@@ -4,7 +4,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 
 import { AuthModule } from '../auth';
 import { CoreModule } from '../core';
-import { QueueModule } from '../queue';
+import { QueueCoreModule } from '../queue/queue-core.module';
 import { ActivityDescriptionController } from './activity-description/activity-description.controller';
 import { ActivityDescriptionService } from './activity-description/activity-description.service';
 import { CorosAdapter } from './adapters/coros.adapter';
@@ -26,6 +26,7 @@ import {
   GarminPersonalScheduler,
 } from './garmin-personal/garmin-personal-processor';
 import { GarminPersonalService } from './garmin-personal/garmin-personal-service';
+import { ProviderExportLockService } from './provider-export-lock.service';
 import {
   CorosProviderService,
   GarminProviderService,
@@ -42,7 +43,7 @@ import { ProviderExportScheduler } from './scheduler.service';
     AuthModule,
     forwardRef(() => CoreModule),
     EventEmitterModule,
-    forwardRef(() => QueueModule),
+    QueueCoreModule,
   ],
   // Before the OAuth controller, whose :provider routes would catch their paths
   controllers: [
@@ -64,6 +65,7 @@ import { ProviderExportScheduler } from './scheduler.service';
     WahooAdapter,
     WahooAuthorizationGuard,
     ProviderExportService,
+    ProviderExportLockService,
     ProviderExportScheduler,
     StravaProviderService,
     GarminProviderService,

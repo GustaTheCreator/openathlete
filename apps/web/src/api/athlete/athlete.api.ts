@@ -35,7 +35,9 @@ export class AthleteAPI {
     return res.data;
   }
 
-  static async getMyCoaches(): Promise<User[]> {
+  static async getMyCoaches(): Promise<
+    Pick<User, 'userId' | 'firstName' | 'lastName' | 'email'>[]
+  > {
     const res = await client.get(routes.athlete.getCoaches);
     return res.data;
   }

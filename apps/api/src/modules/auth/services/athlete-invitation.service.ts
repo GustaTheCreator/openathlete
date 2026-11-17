@@ -17,6 +17,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InvitationStatus, Prisma, UserRole } from '@openathlete/database';
 import { ApiEnvSchemaType, InvitationLinkDto } from '@openathlete/shared';
 
+import { INVITATION_TTL_MS } from 'src/common/constants/invitation.constant';
 import { SendEmailEvent } from 'src/events';
 import { AnalyticsService } from 'src/modules/analytics/analytics.service';
 import {
@@ -37,8 +38,6 @@ const OPEN_STATUSES = [{ status: InvitationStatus.PENDING }, { status: null }];
 
 const isOpen = (status: InvitationStatus | null) =>
   status === null || status === InvitationStatus.PENDING;
-
-const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class AthleteInvitationService {
@@ -191,9 +190,7 @@ export class AthleteInvitationService {
       const now = new Date();
       const invitationDate = new Date(existingInvitation.createdAt);
       const diff = now.getTime() - invitationDate.getTime();
-      const sevenDays = 60 * 60 * 24 * 7 * 1000;
-
-      if (diff < sevenDays) {
+      if (diff < INVITATION_TTL_MS) {
         throw new ConflictException(
           'An invitation has already been sent to this email',
         );

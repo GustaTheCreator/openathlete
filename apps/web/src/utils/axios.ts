@@ -274,14 +274,10 @@ export const routes = {
     duplicate: (eventId: number) => `/event/${eventId}/workout/duplicate`,
   },
   trainingLoad: {
-    calculate: (activityId: number) => `/training-load/calculate/${activityId}`,
     activity: (activityId: number) => `/training-load/activity/${activityId}`,
-    period: '/training-load/period',
     metrics: '/training-load/metrics',
-    history: '/training-load/history',
     weeklySummary: '/training-load/weekly-summary',
     days: '/training-load/days',
-    recalculate: '/training-load/recalculate',
   },
   subscription: {
     current: '/subscription/current',

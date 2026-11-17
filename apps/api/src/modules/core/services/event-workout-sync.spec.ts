@@ -43,6 +43,10 @@ describe('EventService workout export sync', () => {
 
   function createService() {
     const prisma = {
+      $transaction: jest.fn(
+        async (run: (tx: unknown) => Promise<unknown>): Promise<unknown> =>
+          run(prisma),
+      ),
       event: {
         findFirst: jest.fn().mockResolvedValue(trainingWithoutSteps),
         findUnique: jest.fn().mockResolvedValue(trainingWithoutSteps),

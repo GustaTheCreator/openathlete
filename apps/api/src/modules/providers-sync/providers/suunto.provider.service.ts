@@ -231,6 +231,7 @@ export class SuuntoProviderService
             Authorization: `Basic ${credentials}`,
             'Content-Type': 'application/x-www-form-urlencoded',
           },
+          timeout: 15_000,
         },
       );
 

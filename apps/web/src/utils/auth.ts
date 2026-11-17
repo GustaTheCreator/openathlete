@@ -7,6 +7,8 @@ import { ACCESS_TOKEN, REFRESH_TOKEN, removeItem } from './local-storage';
 let memoryAccessToken: string | null = null;
 let memoryRefreshToken: string | null = null;
 let refreshInFlight: Promise<TokenInfo | null> | null = null;
+let refreshAbortController: AbortController | null = null;
+let authEpoch = 0;
 
 type TokenInfo = {
   accessToken: string;
@@ -54,6 +56,10 @@ export function setRefreshToken(token: string) {
 }
 
 export function clearAuthTokens() {
+  authEpoch += 1;
+  refreshAbortController?.abort();
+  refreshAbortController = null;
+  refreshInFlight = null;
   memoryRefreshToken = null;
   memoryAccessToken = null;
   discardLegacySessionTokens();
@@ -105,7 +111,11 @@ export function isTokenExpiringSoon(
   }
 }
 
-async function refreshTokenOnce(force: boolean): Promise<TokenInfo | null> {
+async function refreshTokenOnce(
+  force: boolean,
+  epoch: number,
+  signal: AbortSignal,
+): Promise<TokenInfo | null> {
   if (!isCapacitor()) {
     discardLegacySessionTokens();
     const currentToken = memoryAccessToken;
@@ -130,13 +140,15 @@ async function refreshTokenOnce(force: boolean): Promise<TokenInfo | null> {
         {
           withCredentials: true,
           headers: authHeaders(csrfToken),
+          signal,
         },
       );
+      if (epoch !== authEpoch) return null;
       if (typeof data?.accessToken !== 'string') return null;
       setAccessToken(data.accessToken);
       return { accessToken: data.accessToken, refreshed: true };
     } catch {
-      return currentTokenInfo;
+      return epoch === authEpoch ? currentTokenInfo : null;
     }
   }
 
@@ -148,7 +160,9 @@ async function refreshTokenOnce(force: boolean): Promise<TokenInfo | null> {
     const { data } = await axios.post(
       `${getApiBaseUrl()}${routes.auth.refreshToken}`,
       { refreshToken: token },
+      { signal },
     );
+    if (epoch !== authEpoch) return null;
     if (
       typeof data?.accessToken !== 'string' ||
       typeof data?.refreshToken !== 'string'
@@ -170,7 +184,13 @@ async function refreshTokenOnce(force: boolean): Promise<TokenInfo | null> {
 export function refreshToken(force = true): Promise<TokenInfo | null> {
   if (refreshInFlight) return refreshInFlight;
 
-  const run = () => refreshTokenOnce(force);
+  const epoch = authEpoch;
+  const controller = new AbortController();
+  refreshAbortController = controller;
+  const run = () =>
+    epoch === authEpoch
+      ? refreshTokenOnce(force, epoch, controller.signal)
+      : Promise.resolve(null);
   const lockManager = !isCapacitor() ? navigator.locks : undefined;
   const pending: Promise<TokenInfo | null> = lockManager
     ? new Promise((resolve, reject) => {
@@ -186,7 +206,10 @@ export function refreshToken(force = true): Promise<TokenInfo | null> {
       })
     : run();
   const tracked = pending.finally(() => {
-    refreshInFlight = null;
+    if (refreshInFlight === tracked) {
+      refreshInFlight = null;
+      refreshAbortController = null;
+    }
   });
   refreshInFlight = tracked;
   return tracked;
@@ -215,21 +238,39 @@ export async function getAccessToken(): Promise<TokenInfo | null> {
 
 export async function logoutAuthSession(): Promise<void> {
   const native = isCapacitor();
-  const tokenInfo = await getAccessToken();
-  const token = tokenInfo?.accessToken;
-  if (!token) return;
-  const csrfToken = native ? null : readCsrfToken();
-  if (!native && !csrfToken) return;
-  await axios.post(
-    `${getApiBaseUrl()}${routes.auth.logout}`,
-    {},
-    {
-      timeout: 5000,
-      headers: {
-        ...(csrfToken ? authHeaders(csrfToken) : {}),
-        Authorization: `Bearer ${token}`,
-      },
-      ...(!native ? { withCredentials: true } : {}),
-    },
-  );
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      (async () => {
+        const tokenInfo = await getAccessToken();
+        const token = tokenInfo?.accessToken;
+        const csrfToken = native ? null : readCsrfToken();
+        if (!token || (!native && !csrfToken)) return;
+        await axios.post(
+          `${getApiBaseUrl()}${routes.auth.logout}`,
+          {},
+          {
+            timeout: 5000,
+            headers: {
+              ...(csrfToken ? authHeaders(csrfToken) : {}),
+              Authorization: `Bearer ${token}`,
+            },
+            signal: controller.signal,
+            ...(!native ? { withCredentials: true } : {}),
+          },
+        );
+      })(),
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(() => {
+          controller.abort();
+          resolve();
+        }, 5000);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    controller.abort();
+    clearAuthTokens();
+  }
 }

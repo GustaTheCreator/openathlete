@@ -3,22 +3,34 @@ import client, { routes } from '@/utils/axios';
 import {
   CompleteOnboardingDto,
   CreateAccountDto,
+  CreateAccountResponseDto,
   EmailLanguage,
   PasswordResetDto,
   PasswordResetRequestDto,
   SignupAttribution,
   UpdateAccountDto,
+  UpdateAccountResponseDto,
   User,
 } from '@openathlete/shared';
 
 export class UserAPI {
-  static async createAccount(body: CreateAccountDto): Promise<User> {
-    const res = await client.post(routes.user.createAccount, body);
+  static async createAccount(
+    body: CreateAccountDto,
+  ): Promise<CreateAccountResponseDto> {
+    const res = await client.post<CreateAccountResponseDto>(
+      routes.user.createAccount,
+      body,
+    );
     return res.data;
   }
 
-  static async updateAccount(body: UpdateAccountDto): Promise<User> {
-    const res = await client.patch(routes.user.updateAccount, body);
+  static async updateAccount(
+    body: UpdateAccountDto,
+  ): Promise<UpdateAccountResponseDto> {
+    const res = await client.patch<UpdateAccountResponseDto>(
+      routes.user.updateAccount,
+      body,
+    );
     return res.data;
   }
 

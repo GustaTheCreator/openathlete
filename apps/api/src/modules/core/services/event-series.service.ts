@@ -126,9 +126,7 @@ export class EventSeriesService {
         ? dto.endDate.getTime() - dto.startDate.getTime()
         : null;
 
-    const updated = [];
-    // One at a time: each update may replace a workout and its watch export
-    for (const occurrence of following) {
+    const edits = following.map((occurrence) => {
       const startDate = new Date(
         addZonedDays(occurrence.startDate, dayShift, timeZone).getTime() +
           timeShift,
@@ -138,14 +136,15 @@ export class EventSeriesService {
           (duration ??
             occurrence.endDate.getTime() - occurrence.startDate.getTime()),
       );
-      updated.push(
-        await this.eventService.updateEvent(user, occurrence.eventId, {
+      return {
+        eventId: occurrence.eventId,
+        data: {
           ...dto,
           ...(dto.startDate && { startDate, endDate }),
-        } as UpdateEventDto),
-      );
-    }
-    return updated;
+        } as UpdateEventDto,
+      };
+    });
+    return this.eventService.updateEvents(user, edits);
   }
 
   /** Deletes an occurrence and the following ones still to do */

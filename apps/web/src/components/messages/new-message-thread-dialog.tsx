@@ -39,7 +39,8 @@ export function NewMessageThreadDialog({
 
   // Combine coaches and athletes, excluding current user
   const availableUsers = useMemo(() => {
-    const users: User[] = [];
+    const users: Pick<User, 'userId' | 'firstName' | 'lastName' | 'email'>[] =
+      [];
 
     if (coaches) {
       users.push(...coaches);

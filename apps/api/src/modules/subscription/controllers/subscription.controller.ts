@@ -52,8 +52,7 @@ import {
 
 import { AnalyticsService } from 'src/modules/analytics/analytics.service';
 
-import { JwtUser } from '../../auth/decorators/user.decorator';
-import { AuthUser } from '../../auth/decorators/user.decorator';
+import { AuthUser, JwtUser } from '../../auth/decorators/user.decorator';
 import { UserTypeGuard } from '../../auth/guards/user-type.guard';
 import { AppleStoreService } from '../apple/apple-store.service';
 import { FeatureAccessService } from '../services/feature-access.service';

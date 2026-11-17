@@ -2,6 +2,8 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { InvitationLinkDto } from '@openathlete/shared';
 
+import { INVITATION_TTL_MS } from 'src/common/constants/invitation.constant';
+
 import { AthleteInvitationService } from './athlete-invitation.service';
 import { CoachInvitationService } from './coach-invitation.service';
 
@@ -40,7 +42,7 @@ export class InvitationService {
       email: invitation.email,
       inviterName: `${inviter.firstName} ${inviter.lastName}`.trim(),
       expiresAt: new Date(
-        invitation.createdAt.getTime() + 7 * 24 * 60 * 60 * 1000,
+        invitation.createdAt.getTime() + INVITATION_TTL_MS,
       ).toISOString(),
     };
   }

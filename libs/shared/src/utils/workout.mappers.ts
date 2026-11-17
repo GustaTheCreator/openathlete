@@ -1,14 +1,6 @@
 import {
-  Workout,
-  WorkoutRepeat,
-  WorkoutStep,
-  WorkoutStepTarget,
-} from '@openathlete/database';
-
-import {
   type CreateWorkoutDto,
   type CreateWorkoutStepDto,
-  type UpdateWorkoutDto,
   type WorkoutDto,
   type WorkoutStepDto,
   type WorkoutStepTargetDto,
@@ -29,7 +21,7 @@ import type {
 // Normalization helpers (camelCase DTOs → clean Create DTOs)
 // ----------------------------------------------------------------------------
 
-type WorkoutStepInputDto = Omit<
+export type WorkoutStepInputDto = Omit<
   Partial<WorkoutStepDto>,
   'childSteps' | 'repeatBlock' | 'durationType'
 > & {
@@ -112,172 +104,6 @@ export function normalizeWorkoutForCreate(dto: {
   return {
     steps: (dto.steps || []).map((s) => normalizeStepForCreate(s)),
   };
-}
-
-// ----------------------------------------------------------------------------
-// Prisma mapping (DTOs → Prisma create/update inputs)
-// Note: We use the current keys expected by the API service to avoid breaking changes.
-// ----------------------------------------------------------------------------
-
-// DB-supported enums (mirror prisma enums)
-const SUPPORTED_TARGET_TYPES = new Set([
-  'OPEN',
-  'PACE',
-  'HEARTRATE',
-  'POWER',
-  'CADENCE',
-  'RPE',
-  'WEIGHT',
-  'ZONE',
-]);
-
-function mapTargetToPrismaCreate(target: WorkoutStepTargetDto) {
-  if (!SUPPORTED_TARGET_TYPES.has(target.targetType)) {
-    return null;
-  }
-  const toNum = (v: number | null | undefined | string): number | null =>
-    v === null || v === undefined || v === '' || Number.isNaN(Number(v))
-      ? null
-      : Number(v);
-  return {
-    targetType: target.targetType,
-    targetMin: toNum(target.targetMin),
-    targetMax: toNum(target.targetMax),
-    targetValue: toNum(target.targetValue),
-    metricType: target.metricType || null,
-  };
-}
-
-function mapStepToPrismaCreate(step: CreateWorkoutStepDto, index?: number) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const base: any = {
-    orderIndex: typeof index === 'number' ? index : 0,
-    stepType: step.stepType,
-    name: step.name ?? null,
-    durationType: step.durationType ?? WORKOUT_DURATION_TYPE.OPEN,
-    durationValue: step.durationValue ?? null,
-    notes: step.notes ?? null,
-    exerciseRef: step.exerciseRef ?? null,
-    tempo: step.tempo ?? null,
-    side: step.side ?? null,
-    targets: {
-      create: (step.targets || [])
-        .map(mapTargetToPrismaCreate)
-        .filter((t) => t !== null),
-    },
-  };
-
-  if (step.repeatBlock && step.repeatBlock.childSteps?.length) {
-    base.repeatBlock = {
-      create: {
-        repetitions: step.repeatBlock.repetitions,
-        kind: step.repeatBlock.kind ?? WORKOUT_REPEAT_KIND.REPEAT,
-        intervalSeconds: step.repeatBlock.intervalSeconds ?? null,
-        timeCapSeconds: step.repeatBlock.timeCapSeconds ?? null,
-        childSteps: {
-          create: step.repeatBlock.childSteps.map((child, childIdx) => ({
-            ...mapStepToPrismaCreate(child, childIdx),
-          })),
-        },
-      },
-    };
-  }
-
-  return base;
-}
-
-export function mapWorkoutDtoToPrisma(
-  data: CreateWorkoutDto | UpdateWorkoutDto | { steps: WorkoutStepInputDto[] },
-) {
-  if (!('steps' in data) || !data.steps) return {};
-  return {
-    steps: {
-      create: data.steps.map((step, index) =>
-        mapStepToPrismaCreate(normalizeStepForCreate(step), index),
-      ),
-    },
-  };
-}
-
-// ----------------------------------------------------------------------------
-// Prisma → DTO mapping (snake_case → camelCase)
-// ----------------------------------------------------------------------------
-
-function mapPrismaTargetToDto(target: WorkoutStepTarget): WorkoutStepTargetDto {
-  return {
-    workoutStepTargetId: target.workoutStepTargetId,
-    targetType: target.targetType,
-    targetMin: target.targetMin ?? null,
-    targetMax: target.targetMax ?? null,
-    targetValue: target.targetValue ?? null,
-    metricType: target.metricType ?? null,
-    stepId: target.stepId,
-    createdAt: target.createdAt ? new Date(target.createdAt) : undefined,
-    updatedAt: target.updatedAt ? new Date(target.updatedAt) : undefined,
-  } as WorkoutStepTargetDto;
-}
-
-function mapPrismaStepToDto(
-  step: WorkoutStep & {
-    targets?: WorkoutStepTarget[];
-    repeatBlock?: WorkoutRepeat & { childSteps: WorkoutStep[] };
-  },
-): WorkoutStepDto {
-  const dto: WorkoutStepDto = {
-    workoutStepId: step.workoutStepId,
-    orderIndex: step.orderIndex,
-    stepType: step.stepType,
-    name: step.name ?? null,
-    notes: step.notes ?? null,
-    durationType: step.durationType,
-    durationValue: step.durationValue ?? null,
-    durationTarget: step.durationTarget ?? null,
-    exerciseRef: step.exerciseRef ?? null,
-    tempo: step.tempo ?? null,
-    side: step.side ?? null,
-    workoutId: step.workoutId ?? undefined,
-    repeatParentId: step.repeatParentId ?? undefined,
-    targets: (step.targets || []).map(mapPrismaTargetToDto),
-    repeatBlock: step.repeatBlock
-      ? {
-          workoutRepeatId: step.repeatBlock.workoutRepeatId,
-          repetitions: step.repeatBlock.repetitions,
-          kind: step.repeatBlock.kind,
-          intervalSeconds: step.repeatBlock.intervalSeconds ?? null,
-          timeCapSeconds: step.repeatBlock.timeCapSeconds ?? null,
-          stepId: step.repeatBlock.stepId,
-          childSteps: (step.repeatBlock.childSteps || []).map(
-            mapPrismaStepToDto,
-          ),
-          createdAt: step.repeatBlock.createdAt
-            ? new Date(step.repeatBlock.createdAt)
-            : undefined,
-          updatedAt: step.repeatBlock.updatedAt
-            ? new Date(step.repeatBlock.updatedAt)
-            : undefined,
-        }
-      : null,
-    createdAt: step.createdAt ? new Date(step.createdAt) : undefined,
-    updatedAt: step.updatedAt ? new Date(step.updatedAt) : undefined,
-  } as WorkoutStepDto;
-
-  return dto;
-}
-
-export function mapPrismaWorkoutToDto(
-  prismaWorkout: Workout & { steps: WorkoutStep[] },
-): WorkoutDto {
-  return {
-    workoutId: prismaWorkout.workoutId,
-    eventTrainingId: prismaWorkout.eventTrainingId,
-    steps: (prismaWorkout.steps || []).map((s) => mapPrismaStepToDto(s)),
-    createdAt: prismaWorkout.createdAt
-      ? new Date(prismaWorkout.createdAt)
-      : undefined,
-    updatedAt: prismaWorkout.updatedAt
-      ? new Date(prismaWorkout.updatedAt)
-      : undefined,
-  } as WorkoutDto;
 }
 
 // ----------------------------------------------------------------------------

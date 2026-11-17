@@ -27,6 +27,7 @@ import {
   getMaxAthletes,
 } from '@openathlete/shared';
 
+import { INVITATION_TTL_MS } from 'src/common/constants/invitation.constant';
 import { SendEmailEvent } from 'src/events';
 import { AnalyticsService } from 'src/modules/analytics/analytics.service';
 import {
@@ -49,8 +50,6 @@ const isFor = (
   (invitation.coachUserId === null &&
     invitation.email !== null &&
     invitation.email.toLowerCase() === coach.email.toLowerCase());
-
-const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class CoachInvitationService {
@@ -210,9 +209,7 @@ export class CoachInvitationService {
         const now = new Date();
         const invitationDate = new Date(existingInvitation.createdAt);
         const diff = now.getTime() - invitationDate.getTime();
-        const sevenDays = 60 * 60 * 24 * 7 * 1000;
-
-        if (diff < sevenDays) {
+        if (diff < INVITATION_TTL_MS) {
           throw new ConflictException(
             'An invitation has already been sent to this email',
           );

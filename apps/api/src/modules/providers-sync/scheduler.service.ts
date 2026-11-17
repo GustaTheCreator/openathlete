@@ -6,9 +6,10 @@ import { Cron } from '@nestjs/schedule';
 import {
   ApiEnvSchemaType,
   SPORT_TYPE,
-  mapPrismaWorkoutToDto,
   normalizeWorkoutForExport,
 } from '@openathlete/shared';
+
+import { mapPrismaWorkoutToDto } from 'src/modules/core/mappers/workout.mapper';
 
 import { ProviderConnectedEvent } from '../../events/provider-connected.event';
 import { PrismaService } from '../prisma/services/prisma.service';

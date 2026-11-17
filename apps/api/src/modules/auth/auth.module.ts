@@ -1,11 +1,11 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 
 import { ApiEnvSchemaType } from '@openathlete/shared';
 
-import { SubscriptionModule } from '../subscription';
+import { SubscriptionModule } from '../subscription/subscription.module';
 import { AuthController, UserController } from './controllers';
 import { OidcController } from './controllers/oidc.controller';
 import { UserTypeGuard } from './guards';
@@ -31,7 +31,7 @@ import { JwtStrategy } from './strategies';
         secret: configService.getOrThrow('JWT_SECRET_KEY'),
       }),
     }),
-    forwardRef(() => SubscriptionModule),
+    SubscriptionModule,
   ],
   controllers: [AuthController, OidcController, UserController],
   providers: [

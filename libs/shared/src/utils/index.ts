@@ -1,5 +1,6 @@
 export * from './numeric-stats.formatter';
 export * from './numeric-stats.converter';
+export * from './grade';
 export * from './activity';
 export * from './geoposition';
 export * from './date';
@@ -34,9 +35,8 @@ export type {
 export {
   normalizeWorkoutForCreate,
   normalizeWorkoutForExport,
-  mapWorkoutDtoToPrisma,
-  mapPrismaWorkoutToDto,
 } from './workout.mappers';
+export type { WorkoutStepInputDto } from './workout.mappers';
 export { formatTarget } from './workout.formatters';
 export {
   getCompatibleMetrics,

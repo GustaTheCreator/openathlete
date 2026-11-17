@@ -7,8 +7,8 @@ import {
   MetricType,
   ProviderAccount,
 } from '@openathlete/database';
-import { mapPrismaWorkoutToDto } from '@openathlete/shared';
 
+import { mapPrismaWorkoutToDto } from 'src/modules/core/mappers/workout.mapper';
 import { PrismaService } from 'src/modules/prisma/services/prisma.service';
 
 import { ProviderRateLimitError } from '../errors/provider-rate-limit.error';
@@ -193,6 +193,7 @@ export class GarminAdapter implements ProviderAdapter {
         () =>
           axios.delete(`${TRAINING_API}/workout/v2/${workoutId}`, {
             headers: authHeaders(accessToken),
+            timeout: 30_000,
           }),
         { notFound: null },
       );
@@ -225,6 +226,7 @@ export class GarminAdapter implements ProviderAdapter {
     const data = await this.request<{ workoutId?: number }>(() =>
       axios.post(CREATE_WORKOUT_URL, workout, {
         headers: authHeaders(accessToken),
+        timeout: 30_000,
       }),
     );
     if (!data?.workoutId) {
@@ -246,6 +248,7 @@ export class GarminAdapter implements ProviderAdapter {
       () =>
         axios.get(`${TRAINING_API}/workout/v2/${workoutId}`, {
           headers: authHeaders(accessToken),
+          timeout: 30_000,
         }),
       { notFound: null },
     );
@@ -260,7 +263,7 @@ export class GarminAdapter implements ProviderAdapter {
             workoutId: Number(workoutId),
             ownerId: existing.ownerId,
           },
-          { headers: authHeaders(accessToken) },
+          { headers: authHeaders(accessToken), timeout: 30_000 },
         ),
       { notFound: null },
     );
@@ -276,7 +279,7 @@ export class GarminAdapter implements ProviderAdapter {
       axios.post(
         `${TRAINING_API}/schedule/`,
         { workoutId: Number(workoutId), date },
-        { headers: authHeaders(accessToken) },
+        { headers: authHeaders(accessToken), timeout: 30_000 },
       ),
     );
     // Garmin answers with the bare schedule id
@@ -311,6 +314,7 @@ export class GarminAdapter implements ProviderAdapter {
         () =>
           axios.delete(`${TRAINING_API}/workout/v2/${workoutId}`, {
             headers: authHeaders(accessToken),
+            timeout: 30_000,
           }),
         { notFound: null },
       );
@@ -319,6 +323,7 @@ export class GarminAdapter implements ProviderAdapter {
         () =>
           axios.delete(`${TRAINING_API}/schedule/${scheduleId}`, {
             headers: authHeaders(accessToken),
+            timeout: 30_000,
           }),
         { notFound: null },
       );
