@@ -28,7 +28,7 @@ export default async function globalSetup() {
   try {
     const created = await context.post(`${API_URL}/user`, {
       headers: apiHeaders(),
-      data: { email, password, firstName: 'E2E', lastName: 'Admin' },
+      data: { email, password, firstName: 'Fixture', lastName: 'Admin' },
     });
     if (!created.ok())
       throw new Error(`E2E admin signup failed: ${await created.text()}`);
