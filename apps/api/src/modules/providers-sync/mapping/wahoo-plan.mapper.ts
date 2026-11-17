@@ -60,43 +60,63 @@ function mapTarget(
   sport: SportType,
   context: SuuntoGuideContext,
 ): WahooPlanTarget[] {
-  const source = step.targets?.[0];
-  if (!source || source.targetType === WORKOUT_TARGET_TYPE.OPEN) return [];
-  const mapped = mapTargetToSuunto(source, sport, context).field;
-  if (!mapped) {
-    throw new Error(
-      `Wahoo cannot represent workout target ${source.targetType}${source.metricType ? ` (${source.metricType})` : ''}`,
-    );
-  }
-  const values = mapped as { value?: number; min?: number; max?: number };
-  const low = values.min ?? values.value ?? values.max;
-  const high = values.max ?? values.value ?? values.min;
-  if (
-    low === undefined ||
-    high === undefined ||
-    !Number.isFinite(low) ||
-    !Number.isFinite(high) ||
-    low < 0 ||
-    high < low
-  ) {
-    throw new Error(`Wahoo target ${mapped.type} has no valid absolute range`);
-  }
-  switch (mapped.type) {
-    case 'targetPower':
-      return [{ type: 'watts', low: Math.round(low), high: Math.round(high) }];
-    case 'targetHeartRate':
-      return [{ type: 'hr', low: Math.round(low), high: Math.round(high) }];
-    case 'targetCadence':
-      return [
-        { type: 'rpm', low: Math.round(low * 60), high: Math.round(high * 60) },
-      ];
-    case 'targetSpeed':
-      return [{ type: 'speed', low, high }];
-    default:
-      throw new Error(
-        `Wahoo cannot represent ${mapped.type} targets on a cycling workout`,
-      );
-  }
+  return (step.targets ?? [])
+    .filter((source) => source.targetType !== WORKOUT_TARGET_TYPE.OPEN)
+    .flatMap<WahooPlanTarget>((source) => {
+      const mapped = mapTargetToSuunto(source, sport, context).field;
+      if (!mapped) {
+        throw new Error(
+          `Wahoo cannot represent workout target ${source.targetType}${source.metricType ? ` (${source.metricType})` : ''}`,
+        );
+      }
+      const values = mapped as { value?: number; min?: number; max?: number };
+      const low = values.min ?? values.value ?? values.max;
+      const high = values.max ?? values.value ?? values.min;
+      if (
+        low === undefined ||
+        high === undefined ||
+        !Number.isFinite(low) ||
+        !Number.isFinite(high) ||
+        low < 0 ||
+        high < low
+      ) {
+        throw new Error(
+          `Wahoo target ${mapped.type} has no valid absolute range`,
+        );
+      }
+      switch (mapped.type) {
+        case 'targetPower':
+          return [
+            {
+              type: 'watts' as const,
+              low: Math.round(low),
+              high: Math.round(high),
+            },
+          ];
+        case 'targetHeartRate':
+          return [
+            {
+              type: 'hr' as const,
+              low: Math.round(low),
+              high: Math.round(high),
+            },
+          ];
+        case 'targetCadence':
+          return [
+            {
+              type: 'rpm' as const,
+              low: Math.round(low * 60),
+              high: Math.round(high * 60),
+            },
+          ];
+        case 'targetSpeed':
+          return [{ type: 'speed' as const, low, high }];
+        default:
+          throw new Error(
+            `Wahoo cannot represent ${mapped.type} targets on a cycling workout`,
+          );
+      }
+    });
 }
 
 function mapStep(

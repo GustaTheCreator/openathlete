@@ -145,6 +145,76 @@ describe('mapWorkoutDtoToWahooPlan', () => {
     ).toThrow(/cannot represent workout target ZONE/);
   });
 
+  it('ignores OPEN markers while preserving all explicit supported targets', () => {
+    const openThenPower = {
+      eventTrainingId: 1,
+      steps: [
+        step(0, {
+          targets: [
+            { targetType: WORKOUT_TARGET_TYPE.OPEN },
+            {
+              targetType: WORKOUT_TARGET_TYPE.POWER,
+              targetMin: 100,
+              targetMax: 100,
+            },
+          ],
+        }),
+      ],
+    } as WorkoutDto;
+    expect(
+      mapWorkoutDtoToWahooPlan(openThenPower, SportType.CYCLING, null, false)
+        .intervals[0].targets,
+    ).toEqual([{ type: 'watts', low: 100, high: 100 }]);
+
+    const powerAndCadence = {
+      eventTrainingId: 1,
+      steps: [
+        step(0, {
+          targets: [
+            {
+              targetType: WORKOUT_TARGET_TYPE.POWER,
+              targetMin: 100,
+              targetMax: 100,
+            },
+            {
+              targetType: WORKOUT_TARGET_TYPE.CADENCE,
+              targetMin: 80,
+              targetMax: 90,
+            },
+          ],
+        }),
+      ],
+    } as WorkoutDto;
+    expect(
+      mapWorkoutDtoToWahooPlan(powerAndCadence, SportType.CYCLING, null, false)
+        .intervals[0].targets,
+    ).toEqual([
+      { type: 'watts', low: 100, high: 100 },
+      { type: 'rpm', low: 80, high: 90 },
+    ]);
+  });
+
+  it('rejects an unresolved explicit target even when another target is supported', () => {
+    const dto = {
+      eventTrainingId: 1,
+      steps: [
+        step(0, {
+          targets: [
+            {
+              targetType: WORKOUT_TARGET_TYPE.POWER,
+              targetMin: 100,
+              targetMax: 100,
+            },
+            { targetType: WORKOUT_TARGET_TYPE.ZONE, targetValue: 99 },
+          ],
+        }),
+      ],
+    } as WorkoutDto;
+    expect(() =>
+      mapWorkoutDtoToWahooPlan(dto, SportType.CYCLING, null, false),
+    ).toThrow(/cannot represent workout target ZONE/);
+  });
+
   it('rejects open intervals without explicit targets, including repeat children', () => {
     const dto = {
       eventTrainingId: 1,
