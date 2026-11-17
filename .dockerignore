@@ -52,6 +52,7 @@ deploy
 .deploy
 public-source
 **/__pycache__
+**/graphify-out
 
 # Test & dev artifacts
 **/*.test.ts

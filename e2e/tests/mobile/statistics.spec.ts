@@ -62,10 +62,22 @@ test('every statistics view fits every width', async ({ page, request }) => {
   test.setTimeout(180_000);
   await prepare(page, request);
 
-  for (const width of WIDTHS) {
-    await page.setViewportSize({ width, height: 800 });
-    for (const query of VIEWS) {
-      await open(page, query);
+  for (const query of VIEWS) {
+    // Keep one cold load per route, then check responsive behavior by resizing.
+    await page.setViewportSize({ width: WIDTHS[0], height: 800 });
+    await open(page, query);
+    for (const width of WIDTHS) {
+      if (width !== WIDTHS[0]) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.evaluate(
+          () =>
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => resolve()),
+              ),
+            ),
+        );
+      }
       const overflow = await page.evaluate(() => {
         const limit = window.innerWidth;
         // What scrolls on purpose, sideways, may be wider than the screen

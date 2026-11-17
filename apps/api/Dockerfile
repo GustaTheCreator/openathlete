@@ -19,22 +19,24 @@ COPY libs/database/package.json libs/database/package.json
 # for `pnpm db:generate`. Force a full install on this RUN only.
 RUN NODE_ENV=development pnpm install --frozen-lockfile --prod=false
 
-COPY . .
-
 # Dummy URL is enough for `prisma generate` (no DB connection).
 # Keep NODE_ENV=development so prisma (devDependency) remains on PATH.
 ENV NODE_ENV=development
 ENV DATABASE_URL="postgresql://build:build@localhost:5432/build?schema=public"
 
 WORKDIR /app/libs/database
+COPY libs/database/ ./
 RUN NODE_ENV=development pnpm db:generate
 RUN NODE_ENV=development pnpm build:config
 
 WORKDIR /app/libs/shared
+COPY libs/shared/ ./
 RUN NODE_ENV=development pnpm build
 
 WORKDIR /app/apps/api
+COPY apps/api/ ./
 RUN NODE_ENV=development pnpm build
+RUN pnpm test:agents
 
 # ---- Runtime stage ----
 FROM node:22.23.4-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS runtime

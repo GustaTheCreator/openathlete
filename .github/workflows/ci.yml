@@ -24,6 +24,7 @@ jobs:
       website: ${{ steps.scope.outputs.website }}
       docs: ${{ steps.scope.outputs.docs }}
       deploy: ${{ steps.scope.outputs.deploy }}
+      timezones: ${{ steps.scope.outputs.timezones }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout@v7
         with:
@@ -61,7 +62,7 @@ jobs:
       fail-fast: false
       matrix:
         # Date bucketing must not depend on the runtime timezone
-        tz: [UTC, America/New_York, Asia/Tokyo]
+        tz: ${{ fromJSON(needs.changes.outputs.timezones) }}
     env:
       TZ: ${{ matrix.tz }}
     steps:
@@ -123,6 +124,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.app == 'true' && needs.changes.outputs.candidate != 'true'
     permissions:
+      actions: read
       contents: read
       packages: read
     uses: ./.github/workflows/e2e.yml
@@ -132,24 +134,12 @@ jobs:
     needs: changes
     if: needs.changes.outputs.app == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/tourmalet' && github.repository == 'GustaTheCreator/openathlete'
     permissions:
+      actions: read
       contents: read
       packages: write
     uses: ./.github/workflows/e2e.yml
     with:
       publish: true
-
-  agents:
-    name: AI agent build tests
-    needs: changes
-    if: needs.changes.outputs.app == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup
-        with:
-          translations: 'false'
-      - run: pnpm api build
-      - run: pnpm api test:agents
 
   website:
     name: Website
@@ -188,7 +178,7 @@ jobs:
   ci-passed:
     name: CI passed
     if: always()
-    needs: [changes, lint, type-check, test, integration, docs, e2e, candidate, agents, website, deploy-tests]
+    needs: [changes, lint, type-check, test, integration, docs, e2e, candidate, website, deploy-tests]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

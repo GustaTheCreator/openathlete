@@ -22,11 +22,22 @@ runs:
       run: pnpm install --frozen-lockfile
       shell: bash
 
+    - name: Restore generated prerequisites
+      id: generated
+      uses: actions/cache@v4
+      with:
+        path: |
+          libs/database/generated
+          libs/shared/dist
+        key: ${{ runner.os }}-${{ runner.arch }}-generated-v1-${{ hashFiles('.github/actions/setup/action.yml', '.nvmrc', '.npmrc', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'libs/database/package.json', 'libs/database/prisma/**', 'libs/database/prisma.config.ts', 'libs/shared/package.json', 'libs/shared/src/**', 'libs/shared/tsconfig.json', 'libs/shared/rollup.config.js') }}
+
     - name: Generate Prisma client
+      if: steps.generated.outputs.cache-hit != 'true'
       run: pnpm database run db:generate
       shell: bash
 
     - name: Build shared library
+      if: steps.generated.outputs.cache-hit != 'true'
       run: pnpm shared build
       shell: bash
 

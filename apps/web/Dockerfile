@@ -18,11 +18,9 @@ COPY libs/shared/package.json libs/shared/package.json
 # Install dependencies (Hoisted with pnpm)
 RUN pnpm install --frozen-lockfile
 
-# Copy full repo (only after deps to maximize layer cache)
-COPY . .
-
 # Build shared (required by web)
 WORKDIR /app/libs/shared
+COPY libs/shared/ ./
 RUN pnpm build
 
 # Build web app
@@ -35,6 +33,7 @@ ARG VITE_SOURCE_CODE_URL="https://github.com/GustaTheCreator/openathlete/tree/to
 ENV VITE_SOURCE_CODE_URL=$VITE_SOURCE_CODE_URL
 
 WORKDIR /app/apps/web
+COPY apps/web/ ./
 RUN pnpm build
 
 # ---- Runtime stage ----

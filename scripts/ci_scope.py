@@ -6,6 +6,16 @@ import subprocess
 from pathlib import Path
 
 CHECKS = ("app", "website", "docs", "deploy")
+TIMEZONES = ["UTC", "America/New_York", "Asia/Tokyo"]
+
+
+def timezones(paths):
+    # Only inert web assets are proven independent of date bucketing.
+    inert = {".css", ".svg", ".png", ".jpg", ".jpeg", ".webp", ".ico", ".woff", ".woff2"}
+    if paths and all(path.startswith(("apps/web/src/", "apps/web/public/"))
+                     and Path(path).suffix.lower() in inert for path in paths):
+        return ["UTC"]
+    return TIMEZONES
 
 
 def classify(paths):
@@ -40,7 +50,7 @@ def required_checks_pass(results):
     if outputs.get("candidate") not in ("true", "false"):
         return False
     groups = {
-        "app": ("lint", "type-check", "test", "integration", "agents"),
+        "app": ("lint", "type-check", "test", "integration"),
         "website": ("website",), "docs": ("docs",), "deploy": ("deploy-tests",),
     }
     for group, jobs in groups.items():
@@ -83,6 +93,7 @@ def main():
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
         for key, value in scope.items():
             print(f"{key}={str(value).lower()}", file=output)
+        print(f"timezones={json.dumps(timezones(paths))}", file=output)
     print(json.dumps(scope))
 
 
