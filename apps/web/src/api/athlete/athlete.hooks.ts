@@ -1,6 +1,8 @@
+import { useUserRoles } from '@/contexts/auth';
 import {
   MutationOptions,
   QueryOptions,
+  UseQueryOptions,
   useMutation,
   useQuery,
   useQueryClient,
@@ -19,13 +21,23 @@ export const useGetMyAthleteQuery = (
   });
 
 export const useGetMyCoachedAthletesQuery = (
-  opt?: QueryOptions<Awaited<ReturnType<typeof AthleteAPI.getCoachedAthletes>>>,
-) =>
-  useQuery({
+  opt?: Omit<
+    UseQueryOptions<Awaited<ReturnType<typeof AthleteAPI.getCoachedAthletes>>>,
+    'queryKey' | 'queryFn'
+  >,
+) => {
+  const roles = useUserRoles();
+  return useQuery({
     ...opt,
     queryFn: AthleteAPI.getCoachedAthletes,
     queryKey: [athleteKeys.getCoachedAthletes],
+    enabled: (query) =>
+      roles?.includes('COACH') === true &&
+      (typeof opt?.enabled === 'function'
+        ? opt.enabled(query)
+        : opt?.enabled !== false),
   });
+};
 
 export const useGetMyCoachesQuery = (
   opt?: QueryOptions<Awaited<ReturnType<typeof AthleteAPI.getMyCoaches>>>,
