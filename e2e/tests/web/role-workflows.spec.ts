@@ -97,7 +97,9 @@ test('a dual-role account can enter both sports areas and is labelled as both', 
     page.getByRole('link', { name: 'Dashboard', exact: true }),
   ).toBeVisible();
   await page.goto('/dashboard/settings?tab=athletes');
-  await expect(page.getByRole('heading', { name: 'Athletes' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Athletes', level: 1, exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByText('No athletes yet. Invite one to start coaching.', {
       exact: true,
@@ -151,10 +153,13 @@ test('a coach shares a copyable open link that an athlete accepts once', async (
     await signIn(recipientPage, athlete);
     await recipientPage.goto(invitationPath);
     await expect(
-      recipientPage.getByRole('button', { name: 'Accept', exact: true }),
+      recipientPage.getByRole('button', {
+        name: 'Accept invitation',
+        exact: true,
+      }),
     ).toBeVisible();
     await recipientPage
-      .getByRole('button', { name: 'Accept', exact: true })
+      .getByRole('button', { name: 'Accept invitation', exact: true })
       .click();
     await expect(recipientPage).toHaveURL(/\/dashboard/);
 
@@ -324,20 +329,40 @@ test('a super-admin grants a fixture account coach access without granting admin
   browser,
 }, testInfo) => {
   const target = await createAthlete(request, { firstName: 'RoleTarget' });
+  const adminActor = await createAthlete(request, { firstName: 'AdminActor' });
   const email = process.env.E2E_ADMIN_EMAIL;
   const password = process.env.E2E_ADMIN_PASSWORD;
   expect(email).toBeTruthy();
   expect(password).toBeTruthy();
+  const bootstrapAdmin = await login(request, email!, password!);
+  const adminProfile = await request.get(`${API_URL}/user/me`, {
+    headers: apiHeaders(undefined, adminActor.accessToken),
+  });
+  expect(adminProfile.status(), await adminProfile.text()).toBe(200);
+  const { userId: adminUserId } = (await adminProfile.json()) as {
+    userId: number;
+  };
+  const adminGrant = await request.patch(
+    `${API_URL}/admin/users/${adminUserId}/roles`,
+    {
+      headers: apiHeaders(undefined, bootstrapAdmin.accessToken),
+      data: { roles: ['ATHLETE', 'SUPER_ADMIN'] },
+    },
+  );
+  expect(adminGrant.status(), await adminGrant.text()).toBe(200);
   const admin = {
-    email: email!,
-    password: password!,
-    ...(await login(request, email!, password!)),
+    ...adminActor,
+    ...(await login(request, adminActor.email, adminActor.password)),
   };
   await signIn(page, admin);
   const problems = trackPageProblems(page);
   await page.goto('/dashboard/admin');
   await expect(
-    page.getByRole('heading', { name: 'Administration', level: 1 }),
+    page.getByRole('heading', {
+      name: 'Administration',
+      level: 1,
+      exact: true,
+    }),
   ).toBeVisible();
   await page.getByLabel('Search users').fill(target.email);
   const userRow = page
