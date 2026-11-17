@@ -87,7 +87,7 @@ test('manual activities use the same six sports and start with cycling', async (
   const problems = trackPageProblems(page);
   const form = await openForm(page, 'Add an activity');
 
-  const sport = form.getByRole('combobox', { name: 'Sport', exact: true });
+  const sport = form.getByRole('combobox', { name: 'Sport' });
   await expect(sport).toContainText('Cycling');
   await sport.click();
   await expect(page.getByRole('option')).toHaveText(LABELS);
@@ -165,7 +165,7 @@ test('an imported sport outside the shortlist survives editing', async ({
   await page.getByText('TRAIL_RUNNING session').first().click();
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   const form = page.getByRole('dialog', { name: 'Edit the activity' });
-  const sport = form.getByRole('combobox', { name: 'Sport', exact: true });
+  const sport = form.getByRole('combobox', { name: 'Sport' });
   await expect(sport).toContainText('Trail Running');
   await sport.click();
   await expect(page.getByRole('option')).toHaveText([
