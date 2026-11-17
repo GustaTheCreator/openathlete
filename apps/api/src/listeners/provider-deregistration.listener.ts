@@ -8,6 +8,7 @@ import { PrismaService } from 'src/modules/prisma/services/prisma.service';
 import {
   GarminProviderService,
   PolarProviderService,
+  WahooProviderService,
 } from 'src/modules/providers-sync/providers';
 
 /**
@@ -23,6 +24,7 @@ export class ProviderDeregistrationListener {
     private readonly prisma: PrismaService,
     private readonly garminProviderService: GarminProviderService,
     private readonly polarProviderService: PolarProviderService,
+    private readonly wahooProviderService: WahooProviderService,
   ) {}
 
   @OnEvent(AccountDeletingEvent.SLUG)
@@ -52,6 +54,21 @@ export class ProviderDeregistrationListener {
     for (const account of polarAccounts) {
       // Its failures are logged there and never block
       await this.polarProviderService.disconnect(account);
+    }
+
+    const wahooAccounts = await this.prisma.providerAccount.findMany({
+      where: {
+        athleteId,
+        provider: ConnectorProvider.WAHOO,
+        status: 'active',
+      },
+    });
+    for (const account of wahooAccounts) {
+      await this.wahooProviderService.disconnect(account).catch(() => {
+        this.logger.error(
+          `Failed to deregister Wahoo account ${account.providerAccountId}; local account deletion will continue`,
+        );
+      });
     }
   }
 }
