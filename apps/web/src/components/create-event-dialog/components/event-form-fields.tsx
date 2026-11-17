@@ -80,7 +80,7 @@ export function EventFormFields({
         >
           {getSelectableSports(currentSport).map((sport) => (
             <SelectItem key={sport} value={sport}>
-              <SportIcon sport={sport} /> {sportTypeLabelMap[sport]}
+              <SportIcon sport={sport} decorative /> {sportTypeLabelMap[sport]}
             </SelectItem>
           ))}
         </RHFSelect>
