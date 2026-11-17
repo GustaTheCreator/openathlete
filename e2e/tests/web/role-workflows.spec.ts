@@ -17,6 +17,8 @@ import { signIn } from '../../support/browser';
 import { API_URL } from '../../support/env';
 import { trackPageProblems } from '../../support/page-health';
 
+test.use({ trace: 'off', screenshot: 'off' });
+
 async function attachScreenshot(page: Page, testInfo: TestInfo, name: string) {
   await testInfo.attach(name, {
     body: await page.screenshot(),
@@ -109,88 +111,82 @@ test('a dual-role account can enter both sports areas and is labelled as both', 
   expect(problems).toEqual([]);
 });
 
-test.describe('bearer invitation link security', () => {
-  test.use({ trace: 'off', screenshot: 'off' });
-
-  test('a coach shares a copyable open link that an athlete accepts once', async ({
-    page,
-    request,
-    browser,
-  }, testInfo) => {
-    const coach = await createAthlete(request, {
-      roles: ['ATHLETE', 'COACH'],
-      firstName: 'Link',
-    });
-    const athlete = await createAthlete(request, { firstName: 'LinkTarget' });
-    const otherAthlete = await createAthlete(request, {
-      firstName: 'LinkOther',
-    });
-    await page.addInitScript(() =>
-      localStorage.setItem('current_space', 'COACH'),
-    );
-    await signIn(page, coach);
-    const problems = trackPageProblems(page);
-
-    await page.goto('/dashboard/settings?tab=athletes');
-    await expect(
-      page.getByRole('button', { name: 'Invite Athlete' }),
-    ).toBeVisible();
-    await attachScreenshot(page, testInfo, 'coach-athletes-settings.png');
-    await page.getByRole('button', { name: 'Invite Athlete' }).click();
-    const dialog = page.getByRole('dialog');
-    const linkField = dialog.locator('#invitation-link-url');
-    await expect(linkField).toBeVisible();
-    const invitationUrl = await linkField.inputValue();
-    expect(invitationUrl).toContain('/auth/invitation?token=');
-    const invitationPath =
-      new URL(invitationUrl).pathname + new URL(invitationUrl).search;
-
-    const recipientContext = await browser.newContext();
-    const recipientPage = await recipientContext.newPage();
-    const recipientProblems = trackPageProblems(recipientPage);
-    try {
-      await signIn(recipientPage, athlete);
-      await recipientPage.goto(invitationPath);
-      await expect(
-        recipientPage.getByRole('button', { name: 'Accept', exact: true }),
-      ).toBeVisible();
-      await recipientPage
-        .getByRole('button', { name: 'Accept', exact: true })
-        .click();
-      await expect(recipientPage).toHaveURL(/\/dashboard/);
-
-      const recipientProfile = await request.get(`${API_URL}/athlete/me`, {
-        headers: apiHeaders(undefined, athlete.accessToken),
-      });
-      expect(recipientProfile.status(), await recipientProfile.text()).toBe(
-        200,
-      );
-      const { athleteId } = (await recipientProfile.json()) as {
-        athleteId: number;
-      };
-      expect(
-        (await coachedAthletes(request, coach)).map((row) => row.athleteId),
-      ).toContain(athleteId);
-
-      const spentContext = await browser.newContext();
-      const spentPage = await spentContext.newPage();
-      const spentProblems = trackPageProblems(spentPage);
-      try {
-        await signIn(spentPage, otherAthlete);
-        await spentPage.goto(invitationPath);
-        await expect(spentPage.getByRole('alert')).toContainText(
-          'This invitation is invalid, expired or already used.',
-        );
-        expect(spentProblems).toEqual([]);
-      } finally {
-        await spentContext.close();
-      }
-    } finally {
-      await recipientContext.close();
-    }
-    expect(recipientProblems).toEqual([]);
-    expect(problems).toEqual([]);
+test('a coach shares a copyable open link that an athlete accepts once', async ({
+  page,
+  request,
+  browser,
+}, testInfo) => {
+  const coach = await createAthlete(request, {
+    roles: ['ATHLETE', 'COACH'],
+    firstName: 'Link',
   });
+  const athlete = await createAthlete(request, { firstName: 'LinkTarget' });
+  const otherAthlete = await createAthlete(request, {
+    firstName: 'LinkOther',
+  });
+  await page.addInitScript(() =>
+    localStorage.setItem('current_space', 'COACH'),
+  );
+  await signIn(page, coach);
+  const problems = trackPageProblems(page);
+
+  await page.goto('/dashboard/settings?tab=athletes');
+  await expect(
+    page.getByRole('button', { name: 'Invite Athlete' }),
+  ).toBeVisible();
+  await attachScreenshot(page, testInfo, 'coach-athletes-settings.png');
+  await page.getByRole('button', { name: 'Invite Athlete' }).click();
+  const dialog = page.getByRole('dialog');
+  const linkField = dialog.locator('#invitation-link-url');
+  await expect(linkField).toBeVisible();
+  const invitationUrl = await linkField.inputValue();
+  expect(invitationUrl).toContain('/auth/invitation?token=');
+  const invitationPath =
+    new URL(invitationUrl).pathname + new URL(invitationUrl).search;
+
+  const recipientContext = await browser.newContext();
+  const recipientPage = await recipientContext.newPage();
+  const recipientProblems = trackPageProblems(recipientPage);
+  try {
+    await signIn(recipientPage, athlete);
+    await recipientPage.goto(invitationPath);
+    await expect(
+      recipientPage.getByRole('button', { name: 'Accept', exact: true }),
+    ).toBeVisible();
+    await recipientPage
+      .getByRole('button', { name: 'Accept', exact: true })
+      .click();
+    await expect(recipientPage).toHaveURL(/\/dashboard/);
+
+    const recipientProfile = await request.get(`${API_URL}/athlete/me`, {
+      headers: apiHeaders(undefined, athlete.accessToken),
+    });
+    expect(recipientProfile.status(), await recipientProfile.text()).toBe(200);
+    const { athleteId } = (await recipientProfile.json()) as {
+      athleteId: number;
+    };
+    expect(
+      (await coachedAthletes(request, coach)).map((row) => row.athleteId),
+    ).toContain(athleteId);
+
+    const spentContext = await browser.newContext();
+    const spentPage = await spentContext.newPage();
+    const spentProblems = trackPageProblems(spentPage);
+    try {
+      await signIn(spentPage, otherAthlete);
+      await spentPage.goto(invitationPath);
+      await expect(spentPage.getByRole('alert')).toContainText(
+        'This invitation is invalid, expired or already used.',
+      );
+      expect(spentProblems).toEqual([]);
+    } finally {
+      await spentContext.close();
+    }
+  } finally {
+    await recipientContext.close();
+  }
+  expect(recipientProblems).toEqual([]);
+  expect(problems).toEqual([]);
 });
 
 test('the roster UI accepts SHARE and a two-athlete TRANSFER with the right access', async ({
