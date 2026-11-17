@@ -6,30 +6,14 @@ import { ChevronDown, Target } from 'lucide-react';
 import { useState } from 'react';
 import { Controller, useFormContext } from 'react-hook-form';
 
-import { SPORT_TYPE } from '@openathlete/shared';
-
 import { formatCompactDuration } from '../../calendar/utils/week-summary';
 import { RHFDistance, RHFDuration } from '../../hook-form';
 import { RHFDateTimePicker } from '../../hook-form/rhf-datetime-picker';
 import { RHFElevation } from '../../hook-form/rhf-elevation';
 import { RHFRpe } from '../../hook-form/rhf-rpe';
 import { RHFTextarea } from '../../hook-form/rhf-textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from '../../ui/select';
 import type { EventFormInput } from '../utils/event-form-schemas';
-
-/** The sports most sessions are planned in, one tap away */
-const MAIN_SPORTS = [
-  SPORT_TYPE.RUNNING,
-  SPORT_TYPE.TRAIL_RUNNING,
-  SPORT_TYPE.CYCLING,
-  SPORT_TYPE.SWIMMING,
-  SPORT_TYPE.STRENGTH,
-];
+import { getSelectableSports } from '../utils/sport-selection';
 
 /** The session name, large, filled from the workout until it is typed */
 export function SessionTitleField({ suggestion }: { suggestion: string }) {
@@ -68,14 +52,14 @@ export function SportChips() {
       name="sport"
       control={control}
       render={({ field }) => {
-        const other = field.value && !MAIN_SPORTS.includes(field.value);
+        const sports = getSelectableSports(field.value);
         return (
           <div
             className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1"
             role="radiogroup"
             aria-label={m.sport()}
           >
-            {MAIN_SPORTS.map((sport) => (
+            {sports.map((sport) => (
               <button
                 key={sport}
                 type="button"
@@ -101,44 +85,6 @@ export function SportChips() {
                 {sportTypeLabelMap[sport]}
               </button>
             ))}
-            <Select
-              value={other ? field.value : ''}
-              onValueChange={field.onChange}
-            >
-              <SelectTrigger
-                className={cn(
-                  'h-9 w-auto shrink-0 rounded-full px-3',
-                  other && 'border-primary bg-primary text-primary-foreground',
-                )}
-                aria-label={m.composer_other_sport()}
-              >
-                <span className="flex items-center gap-1.5">
-                  {other ? (
-                    <>
-                      <SportIcon
-                        sport={field.value}
-                        className="size-4 invert dark:invert-0"
-                      />
-                      {sportTypeLabelMap[field.value]}
-                    </>
-                  ) : (
-                    m.composer_other_sport()
-                  )}
-                </span>
-              </SelectTrigger>
-              <SelectContent>
-                {Object.values(SPORT_TYPE)
-                  .filter((sport) => !MAIN_SPORTS.includes(sport))
-                  .sort((a, b) =>
-                    sportTypeLabelMap[a].localeCompare(sportTypeLabelMap[b]),
-                  )
-                  .map((sport) => (
-                    <SelectItem key={sport} value={sport}>
-                      <SportIcon sport={sport} /> {sportTypeLabelMap[sport]}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
           </div>
         );
       }}

@@ -2,9 +2,9 @@ import { useGetMyEquipmentQuery } from '@/api/equipment';
 import { SportIcon } from '@/components/sport-icon/sport-icon';
 import { m } from '@/paraglide/messages';
 import { sportTypeLabelMap } from '@/utils/label-map/core';
-import { UseFormSetValue } from 'react-hook-form';
+import { UseFormSetValue, useWatch } from 'react-hook-form';
 
-import { EVENT_TYPE, SPORT_TYPE, formatSpeed } from '@openathlete/shared';
+import { EVENT_TYPE, formatSpeed } from '@openathlete/shared';
 
 import { formatCompactDuration } from '../../calendar/utils/week-summary';
 import {
@@ -20,6 +20,7 @@ import { RHFRpe } from '../../hook-form/rhf-rpe';
 import { RHFTextarea } from '../../hook-form/rhf-textarea';
 import { SelectItem } from '../../ui/select';
 import { type EventFormInput, NO_EQUIPMENT } from '../utils/event-form-schemas';
+import { getSelectableSports } from '../utils/sport-selection';
 import { CompetitionPriorityField } from './competition-priority-field';
 
 type Props = {
@@ -57,6 +58,8 @@ export function EventFormFields({
   isTemplate,
   logging,
 }: Props) {
+  const currentSport = useWatch<EventFormInput, 'sport'>({ name: 'sport' });
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
       <RHFTextField
@@ -75,7 +78,7 @@ export function EventFormFields({
           required
           placeholder={m.select_a_sport()}
         >
-          {Object.values(SPORT_TYPE).map((sport) => (
+          {getSelectableSports(currentSport).map((sport) => (
             <SelectItem key={sport} value={sport}>
               <SportIcon sport={sport} /> {sportTypeLabelMap[sport]}
             </SelectItem>

@@ -296,7 +296,10 @@ describe('WahooProviderService', () => {
         },
       ],
     });
-    const [activity] = await service.importActivities(makeAccount());
+    const [activity] = await service.importActivities(makeAccount(), {
+      startDate: new Date('2026-11-10T00:00:00Z'),
+      endDate: new Date('2026-11-11T00:00:00Z'),
+    });
     expect(activity).toMatchObject({
       externalId: 'wahoo:8:44',
       distance: 12500.5,

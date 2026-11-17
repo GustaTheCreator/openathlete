@@ -32,6 +32,7 @@ test('a structured run is typed in a few seconds and saved as written', async ({
   await signIn(page, athlete);
   const problems = trackPageProblems(page);
   const form = await planTraining(page);
+  await form.getByRole('radio', { name: 'Running', exact: true }).click();
 
   const quick = form.locator('[data-quick-add]');
   for (const line of ["15' Z2", "6x(1km Z4 / 2' Z1)", "10' Z1"]) {
