@@ -35,6 +35,10 @@ describe('EventService.computeAndApplyPlannedTrainingLoad', () => {
     scheduleEstimation?: jest.Mock;
   }) {
     const prisma = {
+      $transaction: jest.fn(
+        async (run: (tx: unknown) => Promise<unknown>): Promise<unknown> =>
+          run(prisma),
+      ),
       event: {
         findFirst: jest.fn().mockResolvedValue(event),
         findUnique: jest.fn().mockResolvedValue(event),

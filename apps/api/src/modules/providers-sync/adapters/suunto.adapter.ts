@@ -3,7 +3,8 @@ import axios, { isAxiosError } from 'axios';
 import { Injectable, Logger } from '@nestjs/common';
 
 import { ConnectorProvider, MetricType } from '@openathlete/database';
-import { mapPrismaWorkoutToDto } from '@openathlete/shared';
+
+import { mapPrismaWorkoutToDto } from 'src/modules/core/mappers/workout.mapper';
 
 import { PrismaService } from '../../prisma/services/prisma.service';
 import { createSuuntoGuideZip } from '../mapping/suunto-guide-zip';
@@ -205,6 +206,7 @@ export class SuuntoAdapter implements ProviderAdapter {
       headers,
       maxBodyLength: Infinity,
       maxContentLength: Infinity,
+      timeout: 30_000,
     };
     const { data } = guideId
       ? await axios.put<SuuntoGuideResponse>(
@@ -234,7 +236,10 @@ export class SuuntoAdapter implements ProviderAdapter {
   ): Promise<string | null> {
     const { data } = await axios.get<SuuntoGuideListResponse>(
       `${GUIDES_API_BASE_URL}/items`,
-      { headers: this.suuntoProviderService.getGuidesApiHeaders(accessToken) },
+      {
+        headers: this.suuntoProviderService.getGuidesApiHeaders(accessToken),
+        timeout: 30_000,
+      },
     );
     return (
       data.payload?.find((item) => item.externalId === externalId)?.id ?? null
@@ -286,6 +291,7 @@ export class SuuntoAdapter implements ProviderAdapter {
             `${GUIDES_API_BASE_URL}/files/${input.externalId}`,
             {
               headers,
+              timeout: 30_000,
             },
           );
 

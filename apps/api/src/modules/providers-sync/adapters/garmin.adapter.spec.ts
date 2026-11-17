@@ -87,7 +87,7 @@ describe('GarminAdapter.upsertPlannedWorkout', () => {
     expect(del).toHaveBeenCalledTimes(1);
     expect(del).toHaveBeenCalledWith(
       `${TRAINING_API}/workout/v2/555`,
-      expect.anything(),
+      expect.objectContaining({ timeout: 30_000 }),
     );
   });
 
@@ -130,6 +130,18 @@ describe('GarminAdapter.upsertPlannedWorkout', () => {
       externalId: '555',
       scheduleId: '777',
     });
+    expect(axios.post).toHaveBeenNthCalledWith(
+      1,
+      expect.any(String),
+      expect.anything(),
+      expect.objectContaining({ timeout: 30_000 }),
+    );
+    expect(axios.post).toHaveBeenNthCalledWith(
+      2,
+      expect.any(String),
+      expect.anything(),
+      expect.objectContaining({ timeout: 30_000 }),
+    );
     expect(del).not.toHaveBeenCalled();
   });
 });

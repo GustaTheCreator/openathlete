@@ -45,7 +45,12 @@ describe('repeated sessions (PostgreSQL)', () => {
       new EventEmitter2(),
       {} as never,
       {} as never,
-      { deleteExportsForWorkout: jest.fn() } as never,
+      {
+        deleteExportsForWorkout: jest.fn(
+          async (_params: unknown, afterDelete?: () => Promise<unknown>) =>
+            afterDelete?.(),
+        ),
+      } as never,
       {} as never,
     );
     bulk = new EventBulkService(prisma, abilities, events);
@@ -161,6 +166,33 @@ describe('repeated sessions (PostgreSQL)', () => {
       // 7:00 in Paris after the end of summer time
       '2026-10-28T06:00:00.000Z',
     ]);
+  });
+
+  it('rolls back earlier occurrences when a later write fails', async () => {
+    const tempo = await plannedTempo();
+    await series.repeat(athlete, tempo.eventId, {
+      everyWeeks: 1,
+      until: new Date('2026-10-27T22:00:00Z'),
+    });
+    const source = await prisma.event.findUniqueOrThrow({
+      where: { eventId: tempo.eventId },
+    });
+    const before = await occurrences(source.seriesId!);
+    await prisma.$executeRawUnsafe(`ALTER TABLE event ADD CONSTRAINT test_reject_series_edit
+      CHECK (event_id <> ${before[2].eventId} OR name <> 'Atomic series')`);
+    try {
+      await expect(
+        series.updateFollowing(athlete, tempo.eventId, {
+          type: 'TRAINING',
+          name: 'Atomic series',
+        } as never),
+      ).rejects.toThrow();
+      expect(await occurrences(source.seriesId!)).toEqual(before);
+    } finally {
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE event DROP CONSTRAINT test_reject_series_edit',
+      );
+    }
   });
 
   it('deletes an occurrence and the following ones still to do', async () => {

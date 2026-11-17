@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
   Optional,
@@ -21,7 +22,6 @@ import {
   EventTraining,
   EventType,
   MetricType,
-  Prisma,
 } from '@openathlete/database';
 import {
   ActivityStream,
@@ -35,8 +35,6 @@ import {
   SeasonEvent,
   UpdateEventDto,
   createWorkoutSchema,
-  mapPrismaWorkoutToDto,
-  mapWorkoutDtoToPrisma,
   startOfDay,
   updateWorkoutSchema,
 } from '@openathlete/shared';
@@ -50,9 +48,13 @@ import { CaslAbilityFactory } from 'src/modules/auth';
 import { AuthUser } from 'src/modules/auth/decorators/user.decorator';
 import { accessibleBy } from 'src/modules/auth/services/casl-prisma';
 import { CalendarWebSocketService } from 'src/modules/calendar/services/calendar-websocket.service';
+import { mapWorkoutDtoToPrisma } from 'src/modules/core/mappers/workout.mapper';
 import { MessageThreadService } from 'src/modules/messages/services/message-thread.service';
 import { MessageService } from 'src/modules/messages/services/message.service';
-import { PrismaService } from 'src/modules/prisma/services/prisma.service';
+import {
+  PrismaService,
+  PrismaTx,
+} from 'src/modules/prisma/services/prisma.service';
 import { QueueService } from 'src/modules/queue/queue.service';
 
 import { CoachActivityNoticeEvent } from '../../../events/coach-activity-notice.event';
@@ -68,6 +70,7 @@ import {
   getHeartRateProfile,
 } from '../helpers/training-load';
 import { remapZonesForAthlete } from '../helpers/workout-zones';
+import { SOURCE_INCLUDE, copyOf } from './event-copy';
 import { EVENT_INCLUDES } from './event-includes';
 import { WorkoutService } from './workout.service';
 
@@ -473,6 +476,53 @@ export class EventService {
   }
 
   async createEvent(user: AuthUser, data: CreateEventDto) {
+    const [created] = await this.createEvents(user, [data]);
+    return created;
+  }
+
+  async createEvents(user: AuthUser, data: CreateEventDto[]) {
+    const effects = await this.prisma.$transaction(
+      async (tx) => {
+        const pending = [];
+        for (const dto of data)
+          pending.push(await this.createEventInTransaction(tx, user, dto));
+        return pending;
+      },
+      { timeout: 30_000 },
+    );
+    return this.runCommittedEventEffects(effects);
+  }
+
+  private async runCommittedEventEffects<T>(
+    effects: { eventId: number; run: () => Promise<T> }[],
+  ): Promise<T[]> {
+    const results: T[] = [];
+    let failed = false;
+    for (const effect of effects) {
+      try {
+        results.push(await effect.run());
+      } catch {
+        failed = true;
+        this.logger.error(
+          `Post-save processing failed for committed event ${effect.eventId}`,
+        );
+      }
+    }
+    if (failed) {
+      const committedEventIds = effects.map(({ eventId }) => eventId);
+      throw new InternalServerErrorException({
+        message: `Events were saved, but post-save processing failed. Do not recreate them; read event IDs: ${committedEventIds.join(', ')}.`,
+        committedEventIds,
+      });
+    }
+    return results;
+  }
+
+  private async createEventInTransaction(
+    tx: PrismaTx,
+    user: AuthUser,
+    data: CreateEventDto,
+  ) {
     const ability = await this.abilities.getFor({ user });
 
     const workout = data.type === 'TRAINING' ? data.workout : undefined;
@@ -503,7 +553,7 @@ export class EventService {
       throw new ForbiddenException('You are not allowed to create this event');
     }
 
-    const created = await this.prisma.event.create({
+    const created = await tx.event.create({
       data: {
         athleteId: finalAthleteId,
         startDate,
@@ -517,6 +567,7 @@ export class EventService {
       include: EVENT_INCLUDES,
     });
 
+    let workoutId: number | undefined;
     if (type === 'TRAINING' && workout && created.training) {
       const parsed = createWorkoutSchema.safeParse({
         steps: workout.steps || [],
@@ -526,12 +577,12 @@ export class EventService {
       }
       // Leftover zones of another athlete become the athlete's own
       const stepsForCreate = await remapZonesForAthlete(
-        this.prisma,
+        tx,
         finalAthleteId,
         created.training.sport,
         parsed.data.steps,
       );
-      const workoutData = await this.prisma.workout.create({
+      const workoutData = await tx.workout.create({
         data: {
           eventTrainingId: created.training.eventTrainingId,
           ...mapWorkoutDtoToPrisma({ steps: stepsForCreate }),
@@ -554,37 +605,45 @@ export class EventService {
         },
       });
 
-      // Emit event for workout export sync if within 7 days
-      this.emitWorkoutPlannedChanged(
-        created.eventId,
-        finalAthleteId,
-        workoutData.workoutId,
-        created.startDate,
-        created.training.sport,
-      );
+      workoutId = workoutData.workoutId;
     }
 
-    // Compute training load or schedule AI estimation for training events
-    if (type === 'TRAINING' && created.training) {
-      const isFuture = created.startDate > startOfDay(new Date());
-      await this.computeAndApplyPlannedTrainingLoad(
-        created.eventId,
-        finalAthleteId,
-        created.training.eventTrainingId,
-        isFuture,
-      );
-    }
+    return {
+      eventId: created.eventId,
+      run: async () => {
+        if (workoutId !== undefined && created.training) {
+          this.emitWorkoutPlannedChanged(
+            created.eventId,
+            finalAthleteId,
+            workoutId,
+            created.startDate,
+            created.training.sport,
+          );
+        }
 
-    if (created.type === 'ACTIVITY')
-      this.eventEmitter.emit(
-        CoachActivityNoticeEvent.SLUG,
-        new CoachActivityNoticeEvent({
-          eventId: created.eventId,
-          kind: 'ACTIVITY',
-          deliveryKey: `import:${created.eventId}`,
-        }),
-      );
-    return this.getEventById(user, created.eventId);
+        // Compute training load or schedule AI estimation for training events
+        if (type === 'TRAINING' && created.training) {
+          const isFuture = created.startDate > startOfDay(new Date());
+          await this.computeAndApplyPlannedTrainingLoad(
+            created.eventId,
+            finalAthleteId,
+            created.training.eventTrainingId,
+            isFuture,
+          );
+        }
+
+        if (created.type === 'ACTIVITY')
+          this.eventEmitter.emit(
+            CoachActivityNoticeEvent.SLUG,
+            new CoachActivityNoticeEvent({
+              eventId: created.eventId,
+              kind: 'ACTIVITY',
+              deliveryKey: `import:${created.eventId}`,
+            }),
+          );
+        return this.getEventById(user, created.eventId);
+      },
+    };
   }
 
   /**
@@ -806,9 +865,42 @@ export class EventService {
     eventId: Event['eventId'],
     data: UpdateEventDto,
   ) {
+    const [updated] = await this.updateEvents(user, [{ eventId, data }]);
+    return updated;
+  }
+
+  async updateEvents(
+    user: AuthUser,
+    edits: { eventId: number; data: UpdateEventDto }[],
+  ) {
+    const effects = await this.prisma.$transaction(
+      async (tx) => {
+        const pending = [];
+        for (const edit of edits)
+          pending.push(
+            await this.updateEventInTransaction(
+              tx,
+              user,
+              edit.eventId,
+              edit.data,
+            ),
+          );
+        return pending;
+      },
+      { timeout: 30_000 },
+    );
+    return this.runCommittedEventEffects(effects);
+  }
+
+  private async updateEventInTransaction(
+    tx: PrismaTx,
+    user: AuthUser,
+    eventId: Event['eventId'],
+    data: UpdateEventDto,
+  ) {
     const ability = await this.abilities.getFor({ user });
 
-    const event = await this.prisma.event.findFirst({
+    const event = await tx.event.findFirst({
       where: {
         AND: [{ eventId: eventId }, accessibleBy(ability, 'update').Event],
       },
@@ -820,7 +912,7 @@ export class EventService {
     }
 
     const isTemplate = Boolean(
-      await this.prisma.eventTemplate.findUnique({
+      await tx.eventTemplate.findUnique({
         where: { eventId: eventId },
       }),
     );
@@ -851,7 +943,7 @@ export class EventService {
         );
       }
       if ('equipmentId' in rest && rest.equipmentId != null) {
-        const equipment = await this.prisma.equipment.findFirst({
+        const equipment = await tx.equipment.findFirst({
           where: { equipmentId: rest.equipmentId, athleteId: event.athleteId! },
         });
         if (!equipment) {
@@ -867,7 +959,7 @@ export class EventService {
     const workoutSteps =
       event.athleteId && workout?.steps
         ? await remapZonesForAthlete(
-            this.prisma,
+            tx,
             event.athleteId,
             (data.type === EVENT_TYPE.TRAINING ? data.sport : undefined) ??
               event.training?.sport,
@@ -886,7 +978,7 @@ export class EventService {
       rest.rpe !== undefined &&
       rest.rpe !== null;
 
-    const updatedEvent = await this.prisma.event.update({
+    const updatedEvent = await tx.event.update({
       where: { eventId: eventId },
       data: {
         startDate,
@@ -906,10 +998,12 @@ export class EventService {
     // One sync per save: two listeners exporting the same workout at once
     // both create it on the device when it was never exported before
     let workoutSyncEmitted = false;
+    const syncEffects: (() => void)[] = [];
 
     // Handle workout updates for training events
     if (event.type === 'TRAINING' && event.training && workout) {
-      const existingWorkout = await this.prisma.workout.findUnique({
+      const sport = event.training.sport;
+      const existingWorkout = await tx.workout.findUnique({
         where: { eventTrainingId: event.training.eventTrainingId },
       });
 
@@ -920,7 +1014,7 @@ export class EventService {
           // steps fails, the old ones are kept. Prisma runs the operations in
           // key order, so deleteMany must come before create. Repeat-block
           // child steps go with their parent step through the cascade.
-          await this.prisma.workout.update({
+          await tx.workout.update({
             where: { workoutId: existingWorkout.workoutId },
             data: {
               steps: {
@@ -948,12 +1042,14 @@ export class EventService {
 
           // Emit event for workout export sync if within 7 days (skip for templates)
           if (!isTemplate) {
-            this.emitWorkoutPlannedChanged(
-              eventId,
-              event.athleteId!,
-              existingWorkout.workoutId,
-              updatedEvent.startDate,
-              event.training.sport,
+            syncEffects.push(() =>
+              this.emitWorkoutPlannedChanged(
+                eventId,
+                event.athleteId!,
+                existingWorkout.workoutId,
+                updatedEvent.startDate,
+                sport,
+              ),
             );
             workoutSyncEmitted = true;
           }
@@ -966,7 +1062,7 @@ export class EventService {
         if (!parsedUpdate.success) {
           throw new BadRequestException(parsedUpdate.error.format());
         }
-        const newWorkout = await this.prisma.workout.create({
+        const newWorkout = await tx.workout.create({
           data: {
             eventTrainingId: event.training.eventTrainingId,
             ...mapWorkoutDtoToPrisma({ steps: parsedUpdate.data.steps }),
@@ -991,233 +1087,244 @@ export class EventService {
 
         // Emit event for workout export sync if within 7 days (skip for templates)
         if (!isTemplate) {
-          this.emitWorkoutPlannedChanged(
-            eventId,
-            event.athleteId!,
-            newWorkout.workoutId,
-            updatedEvent.startDate,
-            event.training.sport,
+          syncEffects.push(() =>
+            this.emitWorkoutPlannedChanged(
+              eventId,
+              event.athleteId!,
+              newWorkout.workoutId,
+              updatedEvent.startDate,
+              sport,
+            ),
           );
           workoutSyncEmitted = true;
         }
       }
     }
 
-    // Recompute training load or schedule AI estimation for training events (skip for templates)
-    if (
-      !isTemplate &&
-      event.type === 'TRAINING' &&
-      event.training &&
-      this.shouldRecomputePlannedTrainingLoad(event.training, data)
-    ) {
-      const isFuture = updatedEvent.startDate > startOfDay(new Date());
-      await this.computeAndApplyPlannedTrainingLoad(
-        eventId,
-        event.athleteId!,
-        event.training.eventTrainingId,
-        isFuture,
-      );
-    }
-
-    // If date changed and there's a workout, emit event for new date too
-    // (skip for templates, and when the workout sync above already carries
-    // the new date)
-    if (
-      !isTemplate &&
-      !workoutSyncEmitted &&
-      event.type === 'TRAINING' &&
-      event.training?.workout &&
-      (startDate || endDate) &&
-      event.athleteId
-    ) {
-      const finalStartDate = startDate ?? event.startDate;
-      this.emitWorkoutPlannedChanged(
-        eventId,
-        event.athleteId,
-        event.training.workout.workoutId,
-        finalStartDate,
-        event.training.sport,
-      );
-    }
-
     // Records and daily loads are dated by the activity
     if (!isTemplate && activityMoved && event.activity) {
-      await this.prisma.record.updateMany({
+      await tx.record.updateMany({
         where: { eventActivityId: event.activity.eventActivityId },
         data: { date: startDate },
       });
     }
 
-    // Records, pace and load depend on the sport: process the activity again,
-    // without the AI or a notification, as for history
-    if (
-      !isTemplate &&
-      event.activity &&
-      'sport' in rest &&
-      rest.sport &&
-      rest.sport !== event.activity.sport
-    ) {
-      await this.queueService
-        ?.addActivityProcessingJob(
-          event.activity.eventActivityId,
-          eventId,
-          true,
-        )
-        .catch((error: unknown) =>
-          this.logger.warn(
-            `Could not reprocess activity ${eventId} after a change of sport: ${String(error)}`,
-          ),
-        );
-    }
+    return {
+      eventId,
+      run: async () => {
+        for (const effect of syncEffects) effect();
+        // Recompute training load or schedule AI estimation for training events (skip for templates)
+        if (
+          !isTemplate &&
+          event.type === 'TRAINING' &&
+          event.training &&
+          this.shouldRecomputePlannedTrainingLoad(event.training, data)
+        ) {
+          const isFuture = updatedEvent.startDate > startOfDay(new Date());
+          await this.computeAndApplyPlannedTrainingLoad(
+            eventId,
+            event.athleteId!,
+            event.training.eventTrainingId,
+            isFuture,
+          );
+        }
 
-    // If RPE was updated on an activity, or it moved to another day, trigger
-    // training load recalculation (skip for templates)
-    if (!isTemplate && (isRpeUpdate || activityMoved) && event.activity) {
-      this.eventEmitter.emit(
-        ActivityImportedEvent.SLUG,
-        new ActivityImportedEvent({
-          eventActivityId: event.activity.eventActivityId,
-          eventId: eventId,
-        }),
-      );
-    }
+        // If date changed and there's a workout, emit event for new date too
+        // (skip for templates, and when the workout sync above already carries
+        // the new date)
+        if (
+          !isTemplate &&
+          !workoutSyncEmitted &&
+          event.type === 'TRAINING' &&
+          event.training?.workout &&
+          (startDate || endDate) &&
+          event.athleteId
+        ) {
+          const finalStartDate = startDate ?? event.startDate;
+          this.emitWorkoutPlannedChanged(
+            eventId,
+            event.athleteId,
+            event.training.workout.workoutId,
+            finalStartDate,
+            event.training.sport,
+          );
+        }
 
-    if (
-      event.type === 'ACTIVITY' &&
-      event.activity &&
-      'description' in rest &&
-      rest.description !== undefined
-    ) {
-      const description = rest.description as string | null;
-      const eventActivityId = event.activity.eventActivityId;
-
-      try {
-        const existingThread = await this.prisma.messageThread.findUnique({
-          where: { eventActivityId: eventActivityId },
-          include: {
-            messages: {
-              orderBy: { createdAt: 'asc' },
-              take: 1,
-            },
-          },
-        });
-
-        if (existingThread) {
-          const firstMessage = existingThread.messages[0];
-          if (firstMessage) {
-            await this.messageService.updateMessage(
-              user,
-              firstMessage.messageId,
-              {
-                content: description || '',
-              },
-              false,
+        // Records, pace and load depend on the sport: process the activity again,
+        // without the AI or a notification, as for history
+        if (
+          !isTemplate &&
+          event.activity &&
+          'sport' in rest &&
+          rest.sport &&
+          rest.sport !== event.activity.sport
+        ) {
+          await this.queueService
+            ?.addActivityProcessingJob(
+              event.activity.eventActivityId,
+              eventId,
+              true,
+            )
+            .catch((error: unknown) =>
+              this.logger.warn(
+                `Could not reprocess activity ${eventId} after a change of sport: ${String(error)}`,
+              ),
             );
-          } else if (description) {
-            await this.messageService.createMessage(
-              user,
-              {
-                messageThreadId: existingThread.messageThreadId,
-                content: description,
+        }
+
+        // If RPE was updated on an activity, or it moved to another day, trigger
+        // training load recalculation (skip for templates)
+        if (!isTemplate && (isRpeUpdate || activityMoved) && event.activity) {
+          this.eventEmitter.emit(
+            ActivityImportedEvent.SLUG,
+            new ActivityImportedEvent({
+              eventActivityId: event.activity.eventActivityId,
+              eventId: eventId,
+            }),
+          );
+        }
+
+        if (
+          event.type === 'ACTIVITY' &&
+          event.activity &&
+          'description' in rest &&
+          rest.description !== undefined
+        ) {
+          const description = rest.description as string | null;
+          const eventActivityId = event.activity.eventActivityId;
+
+          try {
+            const existingThread = await this.prisma.messageThread.findUnique({
+              where: { eventActivityId: eventActivityId },
+              include: {
+                messages: {
+                  orderBy: { createdAt: 'asc' },
+                  take: 1,
+                },
               },
-              false,
-            );
-          }
-        } else if (description) {
-          const eventWithAthlete = await this.prisma.event.findUnique({
-            where: { eventId: eventId },
-            include: {
-              athlete: {
+            });
+
+            if (existingThread) {
+              const firstMessage = existingThread.messages[0];
+              if (firstMessage) {
+                await this.messageService.updateMessage(
+                  user,
+                  firstMessage.messageId,
+                  {
+                    content: description || '',
+                  },
+                  false,
+                );
+              } else if (description) {
+                await this.messageService.createMessage(
+                  user,
+                  {
+                    messageThreadId: existingThread.messageThreadId,
+                    content: description,
+                  },
+                  false,
+                );
+              }
+            } else if (description) {
+              const eventWithAthlete = await this.prisma.event.findUnique({
+                where: { eventId: eventId },
                 include: {
-                  coachAthletes: {
+                  athlete: {
                     include: {
-                      user: true,
+                      coachAthletes: {
+                        include: {
+                          user: true,
+                        },
+                      },
                     },
                   },
                 },
-              },
-            },
-          });
+              });
 
-          if (eventWithAthlete?.athlete) {
-            const athlete = eventWithAthlete.athlete;
-            const participantUserIds = [
-              athlete.userId,
-              ...athlete.coachAthletes.map((ca) => ca.userId),
-            ];
+              if (eventWithAthlete?.athlete) {
+                const athlete = eventWithAthlete.athlete;
+                const participantUserIds = [
+                  athlete.userId,
+                  ...athlete.coachAthletes.map((ca) => ca.userId),
+                ];
 
-            const thread = await this.messageThreadService.createThread(user, {
-              eventActivityId,
-              participantUserIds,
-            });
+                const thread = await this.messageThreadService.createThread(
+                  user,
+                  {
+                    eventActivityId,
+                    participantUserIds,
+                  },
+                );
 
-            await this.messageService.createMessage(
-              user,
-              {
-                messageThreadId: thread.messageThreadId,
-                content: description,
-              },
-              false,
+                await this.messageService.createMessage(
+                  user,
+                  {
+                    messageThreadId: thread.messageThreadId,
+                    content: description,
+                  },
+                  false,
+                );
+              }
+            }
+          } catch (error) {
+            this.logger.error(
+              `Error creating/updating comment thread: ${error instanceof Error ? error.message : String(error)}`,
+              error instanceof Error ? error.stack : undefined,
+            );
+          }
+
+          if (
+            event.type === 'ACTIVITY' &&
+            event.activity &&
+            isRpeUpdate &&
+            description &&
+            description.trim() !== ''
+          ) {
+            const eventActivityId = event.activity.eventActivityId;
+            this.eventEmitter.emit(
+              ActivityFeedbackCompletedEvent.SLUG,
+              new ActivityFeedbackCompletedEvent({
+                eventActivityId,
+                eventId,
+                trigger: 'rpe_comment_updated',
+              }),
             );
           }
         }
-      } catch (error) {
-        this.logger.error(
-          `Error creating/updating comment thread: ${error instanceof Error ? error.message : String(error)}`,
-          error instanceof Error ? error.stack : undefined,
-        );
-      }
 
-      if (
-        event.type === 'ACTIVITY' &&
-        event.activity &&
-        isRpeUpdate &&
-        description &&
-        description.trim() !== ''
-      ) {
-        const eventActivityId = event.activity.eventActivityId;
-        this.eventEmitter.emit(
-          ActivityFeedbackCompletedEvent.SLUG,
-          new ActivityFeedbackCompletedEvent({
-            eventActivityId,
-            eventId,
-            trigger: 'rpe_comment_updated',
-          }),
-        );
-      }
-    }
+        if (!isTemplate && event.type === 'ACTIVITY' && event.activity) {
+          const changed = (kind: 'RPE' | 'COMMENT') =>
+            this.eventEmitter.emit(
+              CoachActivityNoticeEvent.SLUG,
+              new CoachActivityNoticeEvent({
+                eventId,
+                kind,
+                actorUserId: user.userId,
+                deliveryKey: `edit:${eventId}:${updatedEvent.updatedAt.toISOString()}`,
+                rpe:
+                  'rpe' in rest && rest.rpe != null
+                    ? Math.round(rest.rpe * 10)
+                    : null,
+              }),
+            );
+          if (
+            'rpe' in rest &&
+            rest.rpe !== undefined &&
+            rest.rpe !== event.activity.rpe
+          )
+            changed('RPE');
+          if (
+            'description' in rest &&
+            rest.description !== undefined &&
+            rest.description !== event.activity.description
+          )
+            changed('COMMENT');
+        }
 
-    if (!isTemplate && event.type === 'ACTIVITY' && event.activity) {
-      const changed = (kind: 'RPE' | 'COMMENT') =>
-        this.eventEmitter.emit(
-          CoachActivityNoticeEvent.SLUG,
-          new CoachActivityNoticeEvent({
-            eventId,
-            kind,
-            actorUserId: user.userId,
-            deliveryKey: `edit:${eventId}:${updatedEvent.updatedAt.toISOString()}`,
-            rpe:
-              'rpe' in rest && rest.rpe != null
-                ? Math.round(rest.rpe * 10)
-                : null,
-          }),
-        );
-      if (
-        'rpe' in rest &&
-        rest.rpe !== undefined &&
-        rest.rpe !== event.activity.rpe
-      )
-        changed('RPE');
-      if (
-        'description' in rest &&
-        rest.description !== undefined &&
-        rest.description !== event.activity.description
-      )
-        changed('COMMENT');
-    }
-
-    // Return the full updated event with all includes
-    return this.getEventById(user, eventId);
+        // Return the full updated event with all includes
+        return this.getEventById(user, eventId);
+      },
+    };
   }
 
   async deleteEvent(user: AuthUser, eventId: Event['eventId']) {
@@ -1253,60 +1360,67 @@ export class EventService {
       },
     });
 
+    const deleteLocalEvent = async () => {
+      // Workouts belong to the event's training (eventTrainingId is not the
+      // event id); deleting the training cascades to them
+      await this.prisma.providerWorkoutExport.deleteMany({
+        where: { workout: { eventTraining: { eventId } } },
+      });
+      await this.prisma.eventTraining.deleteMany({
+        where: { eventId: eventId },
+      });
+      await this.prisma.eventCompetition.deleteMany({
+        where: { eventId: eventId },
+      });
+      await this.prisma.eventNote.deleteMany({
+        where: { eventId: eventId },
+      });
+      await this.prisma.eventActivityWeather.deleteMany({
+        where: { eventActivity: { eventId: eventId } },
+      });
+      await this.prisma.eventActivityNormalizationFactor.deleteMany({
+        where: { normalization: { eventActivity: { eventId: eventId } } },
+      });
+      await this.prisma.eventActivityNormalization.deleteMany({
+        where: { eventActivity: { eventId: eventId } },
+      });
+      await this.prisma.record.deleteMany({
+        where: { eventActivity: { event: { eventId: eventId } } },
+      });
+      await this.prisma.activityFeedbackQuestion.deleteMany({
+        where: { activity: { eventId: eventId } },
+      });
+      await this.prisma.activityFeedbackEmbedding.deleteMany({
+        where: { activity: { eventId: eventId } },
+      });
+      await this.prisma.eventActivity.deleteMany({
+        where: { eventId: eventId },
+      });
+
+      const deletedEvent = await this.prisma.event.delete({
+        where: { eventId: eventId },
+      });
+
+      if (event.athleteId && notify) {
+        this.calendarWebSocketService?.notifyWeeklyLoadUpdated(
+          event.athleteId,
+          {
+            eventId,
+            reason: 'event_deleted',
+          },
+        );
+      }
+
+      return deletedEvent;
+    };
+
     if (event.training?.workout?.workoutId) {
-      await this.providerExportService.deleteExportsForWorkout({
-        workoutId: event.training.workout.workoutId,
-      });
+      return this.providerExportService.deleteExportsForWorkout(
+        { workoutId: event.training.workout.workoutId },
+        deleteLocalEvent,
+      );
     }
-
-    // Workouts belong to the event's training (eventTrainingId is not the
-    // event id); deleting the training cascades to them
-    await this.prisma.providerWorkoutExport.deleteMany({
-      where: { workout: { eventTraining: { eventId } } },
-    });
-    await this.prisma.eventTraining.deleteMany({
-      where: { eventId: eventId },
-    });
-    await this.prisma.eventCompetition.deleteMany({
-      where: { eventId: eventId },
-    });
-    await this.prisma.eventNote.deleteMany({
-      where: { eventId: eventId },
-    });
-    await this.prisma.eventActivityWeather.deleteMany({
-      where: { eventActivity: { eventId: eventId } },
-    });
-    await this.prisma.eventActivityNormalizationFactor.deleteMany({
-      where: { normalization: { eventActivity: { eventId: eventId } } },
-    });
-    await this.prisma.eventActivityNormalization.deleteMany({
-      where: { eventActivity: { eventId: eventId } },
-    });
-    await this.prisma.record.deleteMany({
-      where: { eventActivity: { event: { eventId: eventId } } },
-    });
-    await this.prisma.activityFeedbackQuestion.deleteMany({
-      where: { activity: { eventId: eventId } },
-    });
-    await this.prisma.activityFeedbackEmbedding.deleteMany({
-      where: { activity: { eventId: eventId } },
-    });
-    await this.prisma.eventActivity.deleteMany({
-      where: { eventId: eventId },
-    });
-
-    const deletedEvent = await this.prisma.event.delete({
-      where: { eventId: eventId },
-    });
-
-    if (event.athleteId && notify) {
-      this.calendarWebSocketService?.notifyWeeklyLoadUpdated(event.athleteId, {
-        eventId,
-        reason: 'event_deleted',
-      });
-    }
-
-    return deletedEvent;
+    return deleteLocalEvent();
   }
 
   async getEventStream(
@@ -1547,9 +1661,17 @@ export class EventService {
     user: AuthUser,
     eventId: Event['eventId'],
   ): Promise<Event> {
+    return this.duplicateEventInTransaction(this.prisma, user, eventId);
+  }
+
+  private async duplicateEventInTransaction(
+    tx: PrismaTx,
+    user: AuthUser,
+    eventId: Event['eventId'],
+  ) {
     const ability = await this.abilities.getFor({ user });
 
-    const event = await this.prisma.event.findFirst({
+    const event = await tx.event.findFirst({
       where: {
         AND: [{ eventId: eventId }, accessibleBy(ability, 'read').Event],
       },
@@ -1581,7 +1703,7 @@ export class EventService {
       delete subEntityData.estimatedLoad;
     }
 
-    return this.prisma.event.create({
+    return tx.event.create({
       data: {
         startDate,
         endDate,
@@ -1601,100 +1723,54 @@ export class EventService {
     eventId: Event['eventId'],
     dto?: { startDate?: Date; endDate?: Date },
   ) {
-    const ability = await this.abilities.getFor({ user });
-
-    // Get original event
-    const originalEvent = await this.prisma.event.findFirst({
-      where: {
-        AND: [{ eventId: eventId }, accessibleBy(ability, 'read').Event],
-      },
-      include: EVENT_INCLUDES,
-    });
-
-    if (!originalEvent) {
-      throw new NotFoundException('Event not found');
-    }
-
-    // Duplicate the event
-    const duplicatedEvent = await this.duplicateEvent(user, eventId);
-
-    // Override dates if provided
-    if (dto?.startDate || dto?.endDate) {
-      const updateData: Prisma.EventUpdateInput = {};
-      if (dto.startDate) updateData.startDate = dto.startDate;
-      if (dto.endDate) updateData.endDate = dto.endDate;
-
-      await this.prisma.event.update({
-        where: { eventId: duplicatedEvent.eventId },
-        data: updateData,
-      });
-    }
-
-    if (originalEvent.type === 'TRAINING' && originalEvent.training?.workout) {
-      const originalWorkout = await this.prisma.workout.findUnique({
-        where: { eventTrainingId: originalEvent.training.eventTrainingId },
-        include: {
-          steps: {
-            include: {
-              targets: true,
-              repeatBlock: {
-                include: {
-                  childSteps: {
-                    include: { targets: true },
-                  },
-                },
-              },
-            },
-            orderBy: { orderIndex: 'asc' },
-          },
-        },
-      });
-
-      if (originalWorkout) {
-        const duplicatedEventWithIncludes = await this.prisma.event.findUnique({
-          where: { eventId: duplicatedEvent.eventId },
-          include: EVENT_INCLUDES,
+    const { originalEvent, duplicatedEvent } = await this.prisma.$transaction(
+      async (tx) => {
+        const ability = await this.abilities.getFor({ user });
+        const originalEvent = await tx.event.findFirst({
+          where: { AND: [{ eventId }, accessibleBy(ability, 'read').Event] },
+          include: SOURCE_INCLUDE,
         });
+        if (!originalEvent) throw new NotFoundException('Event not found');
 
-        if (duplicatedEventWithIncludes?.training) {
-          const originalDto = mapPrismaWorkoutToDto(originalWorkout);
-          // Repairs zones of another athlete the original may still carry
-          const steps = duplicatedEventWithIncludes.athleteId
-            ? await remapZonesForAthlete(
-                this.prisma,
-                duplicatedEventWithIncludes.athleteId,
-                duplicatedEventWithIncludes.training.sport,
-                originalDto.steps,
-              )
-            : originalDto.steps;
-          await this.prisma.workout.create({
-            data: {
-              eventTrainingId:
-                duplicatedEventWithIncludes.training.eventTrainingId,
-              ...mapWorkoutDtoToPrisma({ steps }),
-            },
+        const workout = originalEvent.training?.workout;
+        if (workout && originalEvent.training && originalEvent.athleteId) {
+          workout.steps = await remapZonesForAthlete(
+            tx,
+            originalEvent.athleteId,
+            originalEvent.training.sport,
+            workout.steps,
+          );
+        }
+        // Recorded activities keep their existing copy semantics; plans use the same mapping as bulk copies.
+        const duplicatedEvent =
+          originalEvent.type === 'ACTIVITY'
+            ? await this.duplicateEventInTransaction(tx, user, eventId)
+            : await tx.event.create({
+                data: { ...copyOf(originalEvent, 0), ...dto },
+                include: EVENT_INCLUDES,
+              });
+        if (originalEvent.type === 'ACTIVITY' && dto) {
+          await tx.event.update({
+            where: { eventId: duplicatedEvent.eventId },
+            data: dto,
           });
         }
-      }
-    }
-
-    // Get the final duplicated event with updated dates
-    const finalDuplicatedEvent = await this.prisma.event.findUnique({
-      where: { eventId: duplicatedEvent.eventId },
-      include: EVENT_INCLUDES,
-    });
+        return { originalEvent, duplicatedEvent };
+      },
+      { timeout: 30_000 },
+    );
 
     // Compute training load or schedule AI estimation for duplicated training events
     if (
       originalEvent.type === 'TRAINING' &&
-      finalDuplicatedEvent?.training &&
+      duplicatedEvent?.training &&
       originalEvent.athleteId
     ) {
-      const isFuture = finalDuplicatedEvent.startDate > startOfDay(new Date());
+      const isFuture = duplicatedEvent.startDate > startOfDay(new Date());
       await this.computeAndApplyPlannedTrainingLoad(
         duplicatedEvent.eventId,
         originalEvent.athleteId,
-        finalDuplicatedEvent.training.eventTrainingId,
+        duplicatedEvent.training.eventTrainingId,
         isFuture,
       );
     }

@@ -17,7 +17,6 @@ import {
   type Record as PrismaRecord,
   type TrainingZone as PrismaTrainingZone,
   type TrainingZoneValue as PrismaTrainingZoneValue,
-  type User as PrismaUser,
   UserRole as PrismaUserRole,
   type Workout as PrismaWorkout,
   type WorkoutRepeat as PrismaWorkoutRepeat,
@@ -25,6 +24,7 @@ import {
   type WorkoutStepTarget as PrismaWorkoutStepTarget,
 } from '@openathlete/database';
 
+import type { UserDto } from '../types/dtos/auth/user.dto';
 import {
   EQUIPMENT_TYPE,
   EVENT_TYPE,
@@ -40,10 +40,7 @@ export type TrainingZone = PrismaTrainingZone;
 
 export type TrainingZoneValue = PrismaTrainingZoneValue;
 
-export interface User extends PrismaUser {
-  roles: UserRole[];
-  athlete?: Athlete;
-}
+export type User = UserDto;
 
 export type Record = PrismaRecord;
 

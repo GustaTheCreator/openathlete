@@ -1,6 +1,6 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 
-import { AuthModule } from '../auth/auth.module';
+import { UserTypeGuard } from '../auth/guards/user-type.guard';
 import { AppleStoreService } from './apple/apple-store.service';
 import { AppleNotificationsController } from './controllers/apple-notifications.controller';
 import { StripeWebhookController } from './controllers/stripe-webhook.controller';
@@ -11,7 +11,6 @@ import { StripeService } from './services/stripe.service';
 import { SubscriptionService } from './services/subscription.service';
 
 @Module({
-  imports: [forwardRef(() => AuthModule)],
   controllers: [
     SubscriptionController,
     StripeWebhookController,
@@ -23,6 +22,7 @@ import { SubscriptionService } from './services/subscription.service';
     SubscriptionService,
     FeatureAccessService,
     FeatureAccessGuard,
+    UserTypeGuard,
   ],
   exports: [
     SubscriptionService,

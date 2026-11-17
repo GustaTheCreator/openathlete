@@ -5,10 +5,10 @@ import {
   type WorkoutStepDto,
   type WorkoutStepTargetDto,
   formatTarget,
-  mapPrismaWorkoutToDto,
 } from '@openathlete/shared';
 
 import { formatRpe } from 'src/common/utils/rpe';
+import { mapPrismaWorkoutToDto } from 'src/modules/core/mappers/workout.mapper';
 
 import { fetchAthleteZones } from '../../agent/services/event-ai-helpers';
 import { PrismaService } from '../../prisma/services/prisma.service';

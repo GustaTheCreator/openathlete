@@ -10,6 +10,7 @@ import {
 
 import { Event, ShiftEventsDto } from '@openathlete/shared';
 
+import { athleteKeys } from '../athlete/athlete.keys';
 import {
   invalidateTrainingLoadQueries,
   trainingLoadKeys,
@@ -26,6 +27,39 @@ type CreateEventContext = {
   previousQueries: Map<unknown[], unknown>;
   tempId: number;
 };
+
+function eventMatchesQueryScope(
+  event: Event,
+  queryKey: QueryKey,
+  queryClient: QueryClient,
+): boolean | undefined {
+  if (queryKey[1] === true) {
+    const queryAthleteId = queryKey[2];
+    if (typeof queryAthleteId === 'number') {
+      return event.athleteId === queryAthleteId;
+    }
+    const coachedAthletes = queryClient.getQueryData<{ athleteId: number }[]>([
+      athleteKeys.getCoachedAthletes,
+    ]);
+    return coachedAthletes?.some(
+      (athlete) => athlete.athleteId === event.athleteId,
+    );
+  }
+
+  const myAthlete = queryClient.getQueryData<{ athleteId: number }>([
+    athleteKeys.getMyAthlete,
+  ]);
+  return myAthlete ? event.athleteId === myAthlete.athleteId : undefined;
+}
+
+function eventOverlapsQueryRange(event: Event, queryKey: QueryKey): boolean {
+  const startDate = queryKey[3] as Date | undefined;
+  const endDate = queryKey[4] as Date | undefined;
+  return (
+    (!startDate || event.endDate >= startDate) &&
+    (!endDate || event.startDate <= endDate)
+  );
+}
 
 export const useCreateEventMutation = (
   opt?: MutationOptions<
@@ -71,14 +105,19 @@ export const useCreateEventMutation = (
         updatedAt: new Date(),
       } as Event;
 
-      // Optimistically add the event to all getMyEvents queries
-      queryClient.setQueriesData<Event[]>(
-        { queryKey: [eventKeys.getMyEvents] },
-        (old) => {
-          if (!old) return [optimisticEvent];
-          return [...old, optimisticEvent];
-        },
-      );
+      // Update only cached windows and athlete scopes that can contain it.
+      previousQueries.forEach((_data, queryKey) => {
+        const old = queryClient.getQueryData<Event[]>(queryKey);
+        if (
+          old &&
+          eventMatchesQueryScope(optimisticEvent, queryKey, queryClient) ===
+            true &&
+          eventOverlapsQueryRange(optimisticEvent, queryKey) &&
+          !old.some((event) => event.eventId === tempId)
+        ) {
+          queryClient.setQueryData(queryKey, [...old, optimisticEvent]);
+        }
+      });
 
       return { previousQueries, tempId };
     },
@@ -95,26 +134,29 @@ export const useCreateEventMutation = (
       const ctx = context as CreateEventContext | undefined;
 
       // First, update the cache with the real event
-      queryClient.setQueriesData<Event[]>(
-        { queryKey: [eventKeys.getMyEvents] },
-        (old) => {
-          if (!old) return [data];
-          // Remove the temporary event if it exists, then add the real one
-          const filtered = ctx?.tempId
-            ? old.filter((e) => e.eventId !== ctx.tempId)
-            : old;
-          // Check if real event already exists
-          const existingIndex = filtered.findIndex(
-            (e) => e.eventId === data.eventId,
-          );
-          if (existingIndex !== -1) {
-            const updated = [...filtered];
-            updated[existingIndex] = data;
-            return updated;
-          }
-          return [...filtered, data];
-        },
-      );
+      ctx?.previousQueries.forEach((_previous, queryKey) => {
+        const old = queryClient.getQueryData<Event[]>(queryKey);
+        if (!old) return;
+        const withoutCreatedEvent = old.filter(
+          (event) =>
+            event.eventId !== ctx.tempId && event.eventId !== data.eventId,
+        );
+        const matchesScope = eventMatchesQueryScope(
+          data,
+          queryKey,
+          queryClient,
+        );
+        const overlapsRange = eventOverlapsQueryRange(data, queryKey);
+        if (matchesScope === undefined && overlapsRange) {
+          void queryClient.invalidateQueries({ queryKey });
+        }
+        queryClient.setQueryData(
+          queryKey,
+          matchesScope === true && overlapsRange
+            ? [...withoutCreatedEvent, data]
+            : withoutCreatedEvent,
+        );
+      });
 
       // Also set the individual event query
       queryClient.setQueryData<Event>([eventKeys.getEvent, data.eventId], data);

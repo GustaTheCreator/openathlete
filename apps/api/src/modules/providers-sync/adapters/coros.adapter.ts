@@ -2,7 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { ConnectorProvider, MetricType } from '@openathlete/database';
 import type { NormalizedWorkout } from '@openathlete/shared';
-import { mapPrismaWorkoutToDto } from '@openathlete/shared';
+
+import { mapPrismaWorkoutToDto } from 'src/modules/core/mappers/workout.mapper';
 
 import { PrismaService } from '../../prisma/services/prisma.service';
 import {

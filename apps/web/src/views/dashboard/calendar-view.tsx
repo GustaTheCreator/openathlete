@@ -14,6 +14,8 @@ import {
   EVENT_TYPE,
 } from '@openathlete/shared';
 
+import { getDesktopCalendarWindow } from './calendar-window';
+
 export function CalendarView() {
   const isMobile = useIsMobile();
   const { data: athlete } = useGetMyAthleteQuery();
@@ -39,32 +41,16 @@ export function CalendarView() {
       );
       end.setHours(23, 59, 59, 999);
       return { startDate: start, endDate: end };
-    } else {
-      const start = new Date(
-        displayedMonth.getFullYear(),
-        displayedMonth.getMonth() - 1,
-        1,
-      );
-      const end = new Date(
-        displayedMonth.getFullYear(),
-        displayedMonth.getMonth() + 2,
-        0,
-      );
-      end.setHours(23, 59, 59, 999);
-      return { startDate: start, endDate: end };
     }
+    return getDesktopCalendarWindow(displayedMonth);
   }, [displayedMonth, isMobile]);
 
-  const { data, refetch, isPending } = useGetMyEventsQuery(
+  const { data, isPending } = useGetMyEventsQuery(
     undefined,
     undefined,
     startDate,
     endDate,
   );
-
-  useEffect(() => {
-    refetch();
-  }, [startDate, endDate, refetch]);
 
   useEffect(() => {
     if (space !== 'ATHLETE' || !data || !athlete || isPending) {

@@ -2,26 +2,22 @@
 
 Updated: 2026-11-17
 
-## Goal now
+## Current delivery
 
-Reduce the time from an application change to a releasable artifact. See [CI design](.github/docs/CI.md) and [decisions](docs/decisions.md).
+Tourmalet 1.7.2 addresses the 20 November code-audit findings: atomic calendar writes, bounded logout, coordinated device exports, explicit public account contracts, scoped calendar caches, module boundaries, shared calculations and unused-code removal. See [audit follow-up](.github/docs/CODE-AUDIT-2026-11.md) and [decisions](docs/decisions.md).
 
-## Status
+The workflow improvement merged through PR #7 (`d3b7780`); PR and stable CI passed. Stable CI produces candidates tested by digest, and release promotion reuses them without rebuilding. Conservative path selection skips unrelated application work for documentation and marketing changes. See [CI design](.github/docs/CI.md).
 
-Local changes implement conservative job selection, stable production candidates tested by digest, promotion without rebuilding, a short release smoke, focused PR feedback, a session-builder save wait, npm cache cleanup and guaranteed local test-stack teardown.
+## Verification
 
-Workflow verification: actionlint and Bash syntax pass; 14 script tests and 19 deployment tests pass; E2E lint/types and smoke selection (2 tests) pass. The canonical `scripts/verify.sh --e2e` passed preparation, locale parity, lint, types and all 1,034 API tests, then hit a timeout in the existing mobile-version CLI test. The unchanged full web suite passed with `--maxWorkers=2` (777 tests). Docker Desktop did not start within 45 seconds, so image/E2E execution remains a CI gate. Independent correctness/spec review passed; changed-spec-first duplication is intentional for earlier feedback.
+Local preparation, translations, locale parity, lint, types, 1,924 unit tests, API/web/website builds and 18 compiled agent tests passed. The canonical `scripts/verify.sh --build` was resumed at lint after formatting corrections, using its same remaining commands.
 
-The user subsequently requested implementation of the code audit for the deployed version. Its 20 findings are being mapped after this workflow review; no application-code fix or production change has yet been made by this task.
+All 303 PostgreSQL integration tests were covered: 39 suites passed in the full run; three setup/connection-timeout suites passed unchanged when repeated alone after the website build finished. Docker Desktop was unavailable locally, so production-image browser regression remains a required CI gate. Independent correctness, simplification and specification reviews completed; the actionable findings were corrected and re-reviewed. The staged secret scan passed.
 
-## Next steps
+## Release and operational limits
 
-Integrate the reviewed workflow through a PR and required CI, then implement and test the code audit's atomic writes, input/session fixes, queue/export reliability, contract and dependency simplifications, and dead-code cleanup. Deliver through the existing release process. Observe PR/stable/release execution before claiming a measured speedup.
+No schema migration or new environment variable is required. Follow the [deployment guide](.github/docs/DEPLOYMENT.md): reviewed PR, exact successful stable push CI, annotated version tag, digest promotion, smoke and server updater. The server receipt is authoritative for the currently deployed version; do not infer it from this source file.
 
-## Open questions
+External provider calls cannot be made transactional. A crash or lost lease after remote acceptance can leave an ambiguous/repeated/orphaned plan; finite request timeouts and existing reconciliation limit this. Real-device sends were not part of this audit validation.
 
-The transient fixture signup 500 has no established cause. Additional timing-based optimizations are deferred as recorded in the CI guide.
-
-## Gotchas
-
-`tourmalet` is stable; `main` is divergent upstream. A release requires an exact successful stable push CI with retained candidate metadata. Missing artifacts fail closed. Server migration approval and rollback behavior remain unchanged. Keep private operational records and credentials outside this public repository.
+`tourmalet` is stable; `main` is divergent upstream. Keep secrets and private operational records outside the public repository. Preserve the migration allowlist and rollback behavior.

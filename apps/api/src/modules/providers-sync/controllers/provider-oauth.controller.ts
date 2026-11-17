@@ -176,10 +176,15 @@ export class ProviderOAuthController {
         },
         codeVerifier: {
           type: 'string',
-          nullable: true,
           description:
-            'PKCE code verifier (Garmin and COROS). Must be stored securely and sent back during token exchange.',
+            'PKCE code verifier (Garmin, COROS and Wahoo). Store securely and send back during token exchange.',
           example: 'abc123def456...',
+        },
+        state: {
+          type: 'string',
+          description:
+            'OAuth state returned by Wahoo; send it with the code and codeVerifier during token exchange.',
+          example: 'random-state-value',
         },
       },
       required: ['uri'],
@@ -281,8 +286,13 @@ export class ProviderOAuthController {
         codeVerifier: {
           type: 'string',
           description:
-            'PKCE code verifier (required for Garmin and COROS, optional for others)',
+            'PKCE code verifier (required for Garmin, COROS and Wahoo; optional for other providers)',
           example: 'xyz789uvw012...',
+        },
+        state: {
+          type: 'string',
+          description: 'OAuth state (required for Wahoo)',
+          example: 'random-state-value',
         },
       },
       required: ['code'],

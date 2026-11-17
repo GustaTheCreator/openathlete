@@ -30,6 +30,7 @@ describe('browser authentication tokens', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     platform.native = false;
     vi.restoreAllMocks();
     document.cookie = 'oa_csrf=; Path=/; Max-Age=0';
@@ -94,6 +95,7 @@ describe('browser authentication tokens', () => {
     expect(post).toHaveBeenCalledWith(
       expect.stringContaining('/auth/refresh-token'),
       { refreshToken: 'native-refresh' },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(localStorage.getItem(ACCESS_TOKEN)).toBeNull();
     expect(localStorage.getItem(REFRESH_TOKEN)).toBeNull();
@@ -165,5 +167,106 @@ describe('browser authentication tokens', () => {
       }),
     );
     expect(post.mock.calls[0][2]).not.toHaveProperty('withCredentials');
+  });
+
+  it('bounds logout when refresh never resolves', async () => {
+    vi.useFakeTimers();
+    setAccessToken(`header.${btoa(JSON.stringify({ exp: 1 }))}.signature`);
+    vi.spyOn(axios, 'post').mockImplementation(
+      (_url, _data, config) =>
+        new Promise((_resolve, reject) =>
+          config?.signal?.addEventListener?.('abort', () =>
+            reject(new Error('aborted')),
+          ),
+        ),
+    );
+    const { logoutAuthSession } = await import('./auth');
+    const logout = logoutAuthSession();
+    await vi.advanceTimersByTimeAsync(5001);
+    await expect(logout).resolves.toBeUndefined();
+    document.cookie = 'oa_csrf=; Path=/; Max-Age=0';
+    await expect(getAccessToken()).resolves.toBeNull();
+  });
+
+  it('ignores a refresh response that arrives after logout times out', async () => {
+    vi.useFakeTimers();
+    setAccessToken(`header.${btoa(JSON.stringify({ exp: 1 }))}.signature`);
+    let resolveRefresh!: (value: {
+      data: { accessToken: string; refreshToken: string };
+    }) => void;
+    vi.spyOn(axios, 'post').mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    const { logoutAuthSession } = await import('./auth');
+    const logout = logoutAuthSession();
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(logout).resolves.toBeUndefined();
+    document.cookie = 'oa_csrf=; Path=/; Max-Age=0';
+    resolveRefresh({
+      data: { accessToken: validToken, refreshToken: 'rotated' },
+    });
+
+    await vi.waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+    await expect(getAccessToken()).resolves.toBeNull();
+  });
+
+  it('refreshes an expired access token before server revocation', async () => {
+    setAccessToken(`header.${btoa(JSON.stringify({ exp: 1 }))}.signature`);
+    const post = vi
+      .spyOn(axios, 'post')
+      .mockImplementationOnce(async () => {
+        document.cookie = 'oa_csrf=rotated-csrf; Path=/';
+        return { data: { accessToken: validToken } };
+      })
+      .mockResolvedValueOnce({ data: {} });
+    const { logoutAuthSession } = await import('./auth');
+    await logoutAuthSession();
+
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(post.mock.calls[1][2]).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: `Bearer ${validToken}`,
+          'X-CSRF-Token': 'rotated-csrf',
+        }),
+      }),
+    );
+  });
+
+  it('does not start refresh after logout expires while waiting for the browser lock', async () => {
+    vi.useFakeTimers();
+    const originalLocks = Object.getOwnPropertyDescriptor(navigator, 'locks');
+    let releaseLock!: () => void;
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: {
+        request: vi.fn(
+          (_name, callback) =>
+            new Promise<void>((resolve) => {
+              releaseLock = () => {
+                void callback().then(resolve);
+              };
+            }),
+        ),
+      },
+    });
+    setAccessToken(`header.${btoa(JSON.stringify({ exp: 1 }))}.signature`);
+    const post = vi.spyOn(axios, 'post');
+    const { logoutAuthSession } = await import('./auth');
+    const pendingToken = getAccessToken();
+    const logout = logoutAuthSession();
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(logout).resolves.toBeUndefined();
+    releaseLock!();
+    await expect(pendingToken).resolves.toBeNull();
+    expect(post).not.toHaveBeenCalled();
+    if (originalLocks) {
+      Object.defineProperty(navigator, 'locks', originalLocks);
+    } else {
+      Reflect.deleteProperty(navigator, 'locks');
+    }
   });
 });

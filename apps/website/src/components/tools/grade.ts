@@ -1,32 +1,23 @@
+import { MAX_RUNNING_GRADE, runningGradeCostRatio } from '@openathlete/shared';
+
 /**
  * Port of apps/api/src/modules/core/helpers/grade-adjusted-speed.ts, so the
- * calculator gives the numbers the app shows on each activity. Keep the
- * coefficients and the clamp in sync with the API.
+ * calculator gives the numbers the app shows on each activity. Both use the
+ * shared energy cost curve and grade clamp.
  */
 
 /** Grades beyond this are GPS or altitude noise, not terrain */
-export const MAX_GRADE = 0.3;
+export const MAX_GRADE = MAX_RUNNING_GRADE;
 
 /**
  * Energy cost of running at a grade (fraction, 0.1 for 10%), in J/kg/m.
  * Minetti et al. 2002, doi:10.1152/japplphysiol.01177.2001.
  */
-export function runningEnergyCost(grade: number): number {
-  const i = grade;
-  return (
-    155.4 * i ** 5 -
-    30.4 * i ** 4 -
-    43.3 * i ** 3 +
-    46.3 * i ** 2 +
-    19.5 * i +
-    3.6
-  );
-}
+export { runningEnergyCost } from '@openathlete/shared';
 
 /** How much more (or less) a metre costs at `grade` than on the flat. */
 export function costRatio(grade: number): number {
-  const clamped = Math.max(-MAX_GRADE, Math.min(MAX_GRADE, grade));
-  return runningEnergyCost(clamped) / runningEnergyCost(0);
+  return runningGradeCostRatio(grade);
 }
 
 /** Flat pace (s/km) that costs the same as `paceSeconds` at `grade`. */

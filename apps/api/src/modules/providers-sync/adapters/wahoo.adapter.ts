@@ -6,10 +6,9 @@ import {
   SportType,
 } from '@openathlete/database';
 import type { NormalizedWorkout } from '@openathlete/shared';
-import {
-  calculateWorkoutDuration,
-  mapPrismaWorkoutToDto,
-} from '@openathlete/shared';
+import { calculateWorkoutDuration } from '@openathlete/shared';
+
+import { mapPrismaWorkoutToDto } from 'src/modules/core/mappers/workout.mapper';
 
 import { PrismaService } from '../../prisma/services/prisma.service';
 import type { SuuntoZone } from '../mapping/suunto-guide.mapper';

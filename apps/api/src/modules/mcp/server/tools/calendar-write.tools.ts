@@ -350,22 +350,11 @@ export const registerCalendarWriteTools: ToolRegistrar = (
           throw new ToolError(`${problems.join('\n')}\nNothing was saved.`);
         }
 
-        const created: number[] = [];
-        try {
-          for (const dto of dtos) {
-            const event = await deps.events.createEvent(ctx.user, dto);
-            created.push(event.eventId);
-          }
-        } catch (error) {
-          // All or nothing: remove what this call already saved
-          for (const eventId of created) {
-            await deps.events
-              .deleteEvent(ctx.user, eventId)
-              .catch(() => undefined);
-          }
-          throw error;
-        }
-        return present(created, scope);
+        const created = await deps.events.createEvents(ctx.user, dtos);
+        return present(
+          created.map((event) => event.eventId),
+          scope,
+        );
       }),
   );
 

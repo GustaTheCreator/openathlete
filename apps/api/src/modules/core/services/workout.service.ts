@@ -9,13 +9,15 @@ import { Event } from '@openathlete/database';
 import {
   DuplicateWorkoutDto,
   ReorderWorkoutStepsDto,
-  mapPrismaWorkoutToDto,
-  mapWorkoutDtoToPrisma,
 } from '@openathlete/shared';
 
 import { CaslAbilityFactory } from 'src/modules/auth';
 import { AuthUser } from 'src/modules/auth/decorators/user.decorator';
 import { accessibleBy } from 'src/modules/auth/services/casl-prisma';
+import {
+  mapPrismaWorkoutToDto,
+  mapWorkoutDtoToPrisma,
+} from 'src/modules/core/mappers/workout.mapper';
 import { PrismaService } from 'src/modules/prisma/services/prisma.service';
 
 import { remapZonesForAthlete } from '../helpers/workout-zones';

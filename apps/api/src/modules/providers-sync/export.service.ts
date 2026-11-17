@@ -15,6 +15,7 @@ import {
 } from './adapters';
 import { mapToCoros, mapToGarmin, mapToSuunto } from './mapping';
 import type { ProviderAdapter } from './provider-adapter.interface';
+import { ProviderExportLockService } from './provider-export-lock.service';
 
 type ProviderKey = 'garmin' | 'suunto' | 'coros' | 'wahoo';
 type ProviderEnum = 'GARMIN' | 'SUUNTO' | 'COROS' | 'WAHOO';
@@ -44,6 +45,7 @@ export class ProviderExportService {
     suuntoAdapter: SuuntoAdapter,
     corosAdapter: CorosAdapter,
     wahooAdapter: WahooAdapter,
+    private readonly exportLock: ProviderExportLockService,
     @Optional() private readonly analytics?: AnalyticsService,
   ) {
     this.adapters = {
@@ -84,7 +86,45 @@ export class ProviderExportService {
     normalized: NormalizedWorkout;
     previousExternalId?: string;
   }): Promise<{ skipped: boolean; externalId?: string }> {
+    return this.exportLock.withLock(params.workoutId, (assertHeld) =>
+      this.upsertPlannedExportLocked(params, assertHeld),
+    );
+  }
+
+  private async upsertPlannedExportLocked(
+    params: {
+      athleteId: number;
+      provider: ProviderKey;
+      workoutId: number;
+      date: string;
+      normalized: NormalizedWorkout;
+      previousExternalId?: string;
+    },
+    assertHeld: () => Promise<void>,
+  ): Promise<{ skipped: boolean; externalId?: string }> {
+    await assertHeld();
     const { athleteId, provider, workoutId, date, normalized } = params;
+    const currentWorkout = await this.prisma.workout.findUnique({
+      where: { workoutId },
+      select: {
+        eventTraining: {
+          select: { event: { select: { athleteId: true, startDate: true } } },
+        },
+      },
+    });
+    const currentEvent = currentWorkout?.eventTraining.event;
+    const currentDate = currentEvent?.startDate
+      ? new Date(currentEvent.startDate)
+      : null;
+    currentDate?.setUTCHours(0, 0, 0, 0);
+    if (
+      !currentEvent ||
+      currentEvent.athleteId !== athleteId ||
+      currentDate?.toISOString().slice(0, 10) !== date
+    ) {
+      return { skipped: true };
+    }
+
     const providerEnum = providerKeyToEnum(provider);
     const plannedDate = new Date(`${date}T00:00:00.000Z`);
     const adapter = this.adapters[provider];
@@ -105,6 +145,7 @@ export class ProviderExportService {
     for (const stale of staleExports) {
       if (adapter.deletePlannedWorkout) {
         try {
+          await assertHeld();
           await adapter.deletePlannedWorkout({
             athleteId,
             externalId: stale.externalId,
@@ -119,6 +160,7 @@ export class ProviderExportService {
         }
       }
 
+      await assertHeld();
       await this.prisma.providerWorkoutExport.deleteMany({
         where: {
           providerWorkoutExportId: stale.providerWorkoutExportId,
@@ -161,6 +203,7 @@ export class ProviderExportService {
       return { skipped: true, externalId: existing.externalId ?? undefined };
     }
 
+    await assertHeld();
     const record = await this.prisma.providerWorkoutExport.upsert({
       where: key,
       create: {
@@ -184,6 +227,8 @@ export class ProviderExportService {
     try {
       const previousScheduleId = record.scheduleId ?? undefined;
 
+      await assertHeld();
+      // shortcut: a provider can create remotely before lease loss, so retries may repeat a call; reconcile provider state if idempotency becomes available.
       const result = await adapter.upsertPlannedWorkout({
         athleteId,
         workoutId,
@@ -194,6 +239,7 @@ export class ProviderExportService {
       });
 
       // updateMany: a concurrent deletion of the export is not an error
+      await assertHeld();
       await this.prisma.providerWorkoutExport.updateMany({
         where: {
           providerWorkoutExportId: record.providerWorkoutExportId,
@@ -206,6 +252,7 @@ export class ProviderExportService {
           scheduleId: result.scheduleId ?? null,
         },
       });
+      await assertHeld();
       await this.analytics?.captureForAthlete(
         athleteId,
         'workout_sent_to_device',
@@ -214,6 +261,7 @@ export class ProviderExportService {
 
       return { skipped: false, externalId: result.externalId };
     } catch (err) {
+      await assertHeld();
       await this.prisma.providerWorkoutExport.updateMany({
         where: {
           providerWorkoutExportId: record.providerWorkoutExportId,
@@ -230,34 +278,49 @@ export class ProviderExportService {
     }
   }
 
-  async deleteExportsForWorkout(params: { workoutId: number }): Promise<void> {
-    const exports = await this.prisma.providerWorkoutExport.findMany({
-      where: { workoutId: params.workoutId },
-    });
+  async deleteExportsForWorkout(params: { workoutId: number }): Promise<void>;
+  async deleteExportsForWorkout<T>(
+    params: { workoutId: number },
+    afterDelete: () => Promise<T>,
+  ): Promise<T>;
+  async deleteExportsForWorkout<T>(
+    params: { workoutId: number },
+    afterDelete?: () => Promise<T>,
+  ): Promise<void | T> {
+    return this.exportLock.withLock(params.workoutId, async (assertHeld) => {
+      await assertHeld();
+      const exports = await this.prisma.providerWorkoutExport.findMany({
+        where: { workoutId: params.workoutId },
+      });
 
-    for (const exp of exports) {
-      const providerKey = exp.provider.toLowerCase() as ProviderKey;
-      const adapter = this.adapters[providerKey];
+      for (const exp of exports) {
+        const providerKey = exp.provider.toLowerCase() as ProviderKey;
+        const adapter = this.adapters[providerKey];
 
-      if (adapter?.deletePlannedWorkout) {
-        try {
-          await adapter.deletePlannedWorkout({
-            athleteId: exp.athleteId,
-            externalId: exp.externalId,
-            scheduleId: exp.scheduleId,
-            date: exp.plannedDate.toISOString().split('T')[0],
-          });
-        } catch (err) {
-          this.logger.warn(
-            `Failed to delete planned workout for provider ${exp.provider} workout ${exp.workoutId}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-          throw err;
+        if (adapter?.deletePlannedWorkout) {
+          try {
+            await assertHeld();
+            await adapter.deletePlannedWorkout({
+              athleteId: exp.athleteId,
+              externalId: exp.externalId,
+              scheduleId: exp.scheduleId,
+              date: exp.plannedDate.toISOString().split('T')[0],
+            });
+          } catch (err) {
+            this.logger.warn(
+              `Failed to delete planned workout for provider ${exp.provider} workout ${exp.workoutId}: ${err instanceof Error ? err.message : String(err)}`,
+            );
+            throw err;
+          }
         }
       }
-    }
 
-    await this.prisma.providerWorkoutExport.deleteMany({
-      where: { workoutId: params.workoutId },
+      await assertHeld();
+      await this.prisma.providerWorkoutExport.deleteMany({
+        where: { workoutId: params.workoutId },
+      });
+      await assertHeld();
+      return afterDelete ? afterDelete() : undefined;
     });
   }
 }

@@ -4,11 +4,7 @@ import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Logger, Optional, forwardRef } from '@nestjs/common';
 
 import { MetricType, SportType } from '@openathlete/database';
-import {
-  AiTask,
-  TrainingZone,
-  mapPrismaWorkoutToDto,
-} from '@openathlete/shared';
+import { AiTask, TrainingZone } from '@openathlete/shared';
 
 import {
   trimpEstimationAgent,
@@ -22,6 +18,7 @@ import {
   estimatePlannedSessionTrimp,
   getHeartRateProfile,
 } from 'src/modules/core/helpers/training-load';
+import { mapPrismaWorkoutToDto } from 'src/modules/core/mappers/workout.mapper';
 
 import {
   fetchAthleteMetrics,

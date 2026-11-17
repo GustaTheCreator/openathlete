@@ -4,15 +4,14 @@ import { PlanStatus } from '@openathlete/database';
 import {
   EVENT_TYPE,
   SEOPlanData,
-  WorkoutStepDto,
   createWorkoutSchema,
-  mapWorkoutDtoToPrisma,
 } from '@openathlete/shared';
 
 import { AuthUser } from '../../auth/decorators/user.decorator';
 import { PrismaService } from '../../prisma/services/prisma.service';
 import { planSessionDayOffset } from '../helpers/plan-session-day';
 import { remapZonesForAthlete } from '../helpers/workout-zones';
+import { mapWorkoutDtoToPrisma } from '../mappers/workout.mapper';
 
 @Injectable()
 export class TrainingPlanService {
@@ -185,29 +184,6 @@ export class TrainingPlanService {
               const workoutData = mapWorkoutDtoToPrisma({
                 steps: stepsForCreate,
               });
-
-              // Ensure all steps have orderIndex (safety check)
-              if (workoutData.steps?.create) {
-                workoutData.steps.create = workoutData.steps.create.map(
-                  (step, idx) => {
-                    const updatedStep = {
-                      ...step,
-                      orderIndex: step.orderIndex ?? idx,
-                    };
-                    // Also ensure childSteps in repeatBlock have orderIndex
-                    if (updatedStep.repeatBlock?.create?.childSteps?.create) {
-                      updatedStep.repeatBlock.create.childSteps.create =
-                        updatedStep.repeatBlock.create.childSteps.create.map(
-                          (child: WorkoutStepDto, childIdx: number) => ({
-                            ...child,
-                            orderIndex: child.orderIndex ?? childIdx,
-                          }),
-                        );
-                    }
-                    return updatedStep;
-                  },
-                );
-              }
 
               await this.prisma.workout.create({
                 data: {

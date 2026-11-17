@@ -3,12 +3,12 @@ import { OnEvent } from '@nestjs/event-emitter';
 
 import {
   SPORT_TYPE,
-  mapPrismaWorkoutToDto,
   normalizeWorkoutForExport,
   startOfDay,
 } from '@openathlete/shared';
 
 import { WorkoutPlannedChangedEvent } from 'src/events';
+import { mapPrismaWorkoutToDto } from 'src/modules/core/mappers/workout.mapper';
 import { PrismaService } from 'src/modules/prisma/services/prisma.service';
 import { ProviderExportService } from 'src/modules/providers-sync/export.service';
 

@@ -68,7 +68,12 @@ describe('MCP tools (PostgreSQL)', () => {
       new EventEmitter2(),
       {} as never,
       {} as never,
-      { deleteExportsForWorkout: jest.fn() } as never,
+      {
+        deleteExportsForWorkout: jest.fn(
+          async (_params: unknown, afterDelete?: () => Promise<unknown>) =>
+            afterDelete?.(),
+        ),
+      } as never,
       {} as never,
     );
     const bulk = new EventBulkService(prisma, abilities, events);
@@ -325,6 +330,26 @@ describe('MCP tools (PostgreSQL)', () => {
     expect(message).toContain('sessions[1]: zone 2203');
     expect(message).toContain('sessions[2]: sport is required');
     expect(message).toContain('Nothing was saved');
+    expect(await prisma.event.count()).toBe(before);
+  });
+
+  it('rolls back all sessions when a workout write fails after validation', async () => {
+    const { call } = await connect(athlete);
+    const before = await prisma.event.count();
+    const result = await call('plan_sessions', {
+      sessions: [
+        { date: '2026-11-25', name: 'First session', sport: 'RUNNING' },
+        {
+          date: '2026-11-26',
+          name: 'Failing workout',
+          sport: 'RUNNING',
+          workoutSteps: [
+            { kind: 'steady', durationSeconds: 600, notes: 'bad\u0000note' },
+          ],
+        },
+      ],
+    });
+    expect(result.isError).toBe(true);
     expect(await prisma.event.count()).toBe(before);
   });
 

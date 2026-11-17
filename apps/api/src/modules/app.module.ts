@@ -33,7 +33,7 @@ import { MessagesModule } from './messages/messages.module';
 import { NotificationModule } from './notification';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProvidersSyncModule } from './providers-sync/providers-sync.module';
-import { QueueModule } from './queue';
+import { QueueModule } from './queue/queue.module';
 import { SeoPlanModule } from './seo/seo-plan.module';
 import { FilesModule } from './stored-files/files.module';
 import { StorageModule } from './stored-files/storage.module';

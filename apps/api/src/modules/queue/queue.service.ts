@@ -363,53 +363,46 @@ export class QueueService {
     return Math.min(2097152, Math.min(daysDiff, 200) * 10000);
   }
 
+  private async prepareActivityImportJob(
+    account: ProviderAccount,
+    activity: ImportedActivity,
+    bulkImport: boolean,
+  ) {
+    const jobId = `import-${account.provider}-${activity.externalId}`;
+    const existingJob = await this.activityImportQueue.getJob(jobId);
+    if (existingJob) {
+      const state = await existingJob.getState();
+      if (state !== 'completed' && state !== 'failed') return null;
+      await existingJob.remove();
+    }
+
+    return {
+      name: 'import',
+      data: {
+        providerAccountId: account.providerAccountId,
+        activity,
+        bulkImport,
+      },
+      opts: {
+        priority: this.calculatePriority(activity.startDate),
+        jobId,
+      },
+    };
+  }
+
   async addActivityImportJob(
     account: ProviderAccount,
     activity: ImportedActivity,
     bulkImport = false,
   ): Promise<void> {
     try {
-      const priority = this.calculatePriority(activity.startDate);
-      const jobId = `import-${account.provider}-${activity.externalId}`;
-
-      let existingJob;
-      try {
-        existingJob = await this.activityImportQueue.getJob(jobId);
-      } catch (error) {
-        this.logger.error(
-          `Failed to check for existing job ${jobId}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        throw error;
-      }
-
-      if (existingJob) {
-        try {
-          const state = await existingJob.getState();
-          if (state === 'completed' || state === 'failed') {
-            await existingJob.remove();
-          } else {
-            return;
-          }
-        } catch (error) {
-          this.logger.error(
-            `Failed to check/remove existing job ${jobId}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          throw error;
-        }
-      }
-
-      await this.activityImportQueue.add(
-        'import',
-        {
-          providerAccountId: account.providerAccountId,
-          activity,
-          bulkImport,
-        },
-        {
-          priority,
-          jobId,
-        },
+      const job = await this.prepareActivityImportJob(
+        account,
+        activity,
+        bulkImport,
       );
+      if (!job) return;
+      await this.activityImportQueue.add(job.name, job.data, job.opts);
     } catch (error) {
       this.logger.error(
         `Failed to add activity import job for ${activity.externalId}: ${error instanceof Error ? error.message : String(error)}`,
@@ -430,51 +423,17 @@ export class QueueService {
           new Date(b.startDate).getTime() - new Date(a.startDate).getTime(),
       );
 
-      const jobsToAdd: Array<{
-        name: string;
-        data: ActivityImportJobData;
-        opts: { priority: number; jobId: string };
-      }> = [];
+      const jobsToAdd: NonNullable<
+        Awaited<ReturnType<typeof this.prepareActivityImportJob>>
+      >[] = [];
 
       for (const activity of sortedActivities) {
-        const jobId = `import-${account.provider}-${activity.externalId}`;
-        let existingJob;
-        try {
-          existingJob = await this.activityImportQueue.getJob(jobId);
-        } catch (error) {
-          this.logger.error(
-            `Failed to check for existing job ${jobId}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-
-        if (existingJob) {
-          try {
-            const state = await existingJob.getState();
-            if (state === 'completed' || state === 'failed') {
-              await existingJob.remove();
-            } else {
-              continue;
-            }
-          } catch (error) {
-            this.logger.error(
-              `Failed to check/remove existing job ${jobId}: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
-        }
-
-        const priority = this.calculatePriority(activity.startDate);
-        jobsToAdd.push({
-          name: 'import',
-          data: {
-            providerAccountId: account.providerAccountId,
-            activity,
-            bulkImport,
-          },
-          opts: {
-            priority,
-            jobId,
-          },
-        });
+        const job = await this.prepareActivityImportJob(
+          account,
+          activity,
+          bulkImport,
+        );
+        if (job) jobsToAdd.push(job);
       }
 
       if (jobsToAdd.length === 0) {

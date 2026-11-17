@@ -223,4 +223,12 @@ describe('agent workout format', () => {
       ]).success,
     ).toBe(false);
   });
+
+  it('refuses a zero pace before it can become an infinite stored speed', () => {
+    expect(
+      workoutSchema.safeParse([
+        { kind: 'work', targets: [{ type: 'pace', min: '0:00' }] },
+      ]).success,
+    ).toBe(false);
+  });
 });

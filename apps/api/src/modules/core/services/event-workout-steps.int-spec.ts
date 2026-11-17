@@ -1,3 +1,4 @@
+import { InternalServerErrorException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import {
@@ -69,6 +70,8 @@ const newSteps = (coolDown: Partial<StepInput> = {}): StepInput[] => [
 describe('replacing the steps of a workout (PostgreSQL)', () => {
   let prisma: PrismaService;
   let events: EventService;
+  const emitter = new EventEmitter2();
+  const emitted = jest.spyOn(emitter, 'emit');
   const athlete = {
     userId: DELETED_USER_ID,
     email: 'athlete@example.com',
@@ -135,7 +138,7 @@ describe('replacing the steps of a workout (PostgreSQL)', () => {
     events = new EventService(
       prisma,
       new CaslAbilityFactory(),
-      new EventEmitter2(),
+      emitter,
       {} as never,
       {} as never,
       {} as never,
@@ -152,6 +155,7 @@ describe('replacing the steps of a workout (PostgreSQL)', () => {
   });
 
   beforeEach(async () => {
+    emitted.mockClear();
     const tables = await prisma.$queryRaw<{ table_name: string }[]>`
       SELECT table_name FROM information_schema.tables
       WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name <> '_prisma_migrations'`;
@@ -189,12 +193,26 @@ describe('replacing the steps of a workout (PostgreSQL)', () => {
   });
 
   it('keeps the old steps when creating the new ones fails', async () => {
+    const original = await prisma.event.findUniqueOrThrow({
+      where: { eventId: EVENT_ID },
+    });
     // PostgreSQL rejects a NUL character in text, which the schema and Prisma
     // accept: the write fails in the database, after the old steps are
     // deleted and the first new ones created, so only a rollback keeps them
     await expect(
-      replaceSteps(newSteps({ notes: 'cool\u0000down' })),
+      events.updateEvent(athlete, EVENT_ID, {
+        type: EVENT_TYPE.TRAINING,
+        name: 'Must roll back with the workout',
+        startDate: new Date('2026-11-25T12:00:00Z'),
+        workout: { steps: newSteps({ notes: 'cool\u0000down' }) },
+      }),
     ).rejects.toThrow();
+
+    expect(emitted).not.toHaveBeenCalled();
+
+    expect(
+      await prisma.event.findUnique({ where: { eventId: EVENT_ID } }),
+    ).toEqual(original);
 
     const steps = await topSteps();
     expect(steps.map((s) => s.workoutStepId)).toEqual([3301, 3302]);
@@ -208,5 +226,102 @@ describe('replacing the steps of a workout (PostgreSQL)', () => {
     expect(steps[1].repeatBlock!.childSteps[0].targets).toHaveLength(1);
     expect(await prisma.workoutStep.count()).toBe(3);
     expect(await orphans()).toEqual({ steps: 0, repeats: 0, targets: 0 });
+  });
+
+  it('leaves no event copy when creating its workout fails', async () => {
+    const before = await prisma.event.count();
+    await prisma.$executeRawUnsafe(`CREATE FUNCTION test_reject_workout() RETURNS trigger AS $$
+      BEGIN RAISE EXCEPTION 'injected workout insert failure'; END; $$ LANGUAGE plpgsql`);
+    await prisma.$executeRawUnsafe(`CREATE TRIGGER test_reject_workout BEFORE INSERT ON workout
+      FOR EACH ROW EXECUTE FUNCTION test_reject_workout()`);
+    try {
+      await expect(
+        events.duplicateEventComplete(athlete, EVENT_ID, {
+          startDate: new Date('2026-11-25T12:00:00Z'),
+        }),
+      ).rejects.toThrow();
+      expect(await prisma.event.count()).toBe(before);
+      expect(emitted).not.toHaveBeenCalled();
+    } finally {
+      await prisma.$executeRawUnsafe(
+        'DROP TRIGGER test_reject_workout ON workout',
+      );
+      await prisma.$executeRawUnsafe('DROP FUNCTION test_reject_workout()');
+    }
+  });
+
+  it('copies the complete workout with fresh identifiers and requested dates', async () => {
+    const startDate = new Date('2026-11-25T12:00:00Z');
+    const endDate = new Date('2026-11-25T13:00:00Z');
+    const copy = await events.duplicateEventComplete(athlete, EVENT_ID, {
+      startDate,
+      endDate,
+    });
+    const saved = await prisma.event.findUniqueOrThrow({
+      where: { eventId: copy.eventId },
+      include: {
+        training: {
+          include: {
+            workout: {
+              include: {
+                steps: {
+                  orderBy: { orderIndex: 'asc' },
+                  include: {
+                    targets: true,
+                    repeatBlock: {
+                      include: { childSteps: { include: { targets: true } } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    expect(saved.eventId).not.toBe(EVENT_ID);
+    expect(saved.startDate).toEqual(startDate);
+    expect(saved.endDate).toEqual(endDate);
+    expect(saved.training?.relatedActivityId).toBeNull();
+    expect(saved.training?.messageThreadId).toBeNull();
+    const workout = saved.training!.workout!;
+    expect(workout.workoutId).not.toBe(WORKOUT_ID);
+    expect(workout.steps).toHaveLength(2);
+    expect(workout.steps[1].repeatBlock?.childSteps[0].targets).toHaveLength(1);
+  });
+
+  it('runs the remaining post-save callbacks and reports all committed IDs after a response read fails', async () => {
+    const read = jest
+      .spyOn(events, 'getEventById')
+      .mockRejectedValueOnce(new Error('injected read failure'));
+    try {
+      const result = await events
+        .createEvents(
+          athlete,
+          ['Saved first', 'Saved second'].map((name) => ({
+            type: EVENT_TYPE.NOTE,
+            name,
+            description: '',
+            startDate: new Date('2026-11-25T12:00:00Z'),
+            endDate: new Date('2026-11-25T13:00:00Z'),
+          })),
+        )
+        .catch((error: unknown) => error);
+      expect(result).toBeInstanceOf(InternalServerErrorException);
+      const saved = await prisma.event.findMany({
+        where: { name: { in: ['Saved first', 'Saved second'] } },
+        orderBy: { eventId: 'asc' },
+      });
+      expect(saved).toHaveLength(2);
+      expect(read).toHaveBeenCalledTimes(2);
+      expect(
+        (result as InternalServerErrorException).getResponse(),
+      ).toMatchObject({
+        committedEventIds: saved.map(({ eventId }) => eventId),
+      });
+      expect((result as Error).message).toContain('Do not recreate them');
+    } finally {
+      read.mockRestore();
+    }
   });
 });

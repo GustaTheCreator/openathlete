@@ -6,13 +6,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 
-import {
-  CreateMessageThreadDto,
-  CreateMessageThreadMessageDto,
-  MarkMessagesAsReadDto,
-  UpdateMessageThreadDto,
-  UpdateMessageThreadMessageDto,
-} from '@openathlete/shared';
+import { CreateMessageThreadDto } from '@openathlete/shared';
 
 import { MessagesAPI } from './messages.api';
 import { messagesKeys } from './messages.keys';
@@ -62,30 +56,6 @@ export const useCreateThreadMutation = (
   });
 };
 
-export const useUpdateThreadMutation = (
-  opt?: MutationOptions<
-    Awaited<ReturnType<typeof MessagesAPI.updateThread>>,
-    Error,
-    { threadId: number; body: UpdateMessageThreadDto }
-  >,
-) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    ...opt,
-    mutationFn: MessagesAPI.updateThread,
-    onSuccess: (data, variables, onMutateResult, context) => {
-      if (opt?.onSuccess)
-        opt.onSuccess(data, variables, onMutateResult, context);
-      queryClient.invalidateQueries({
-        queryKey: messagesKeys.getThread(variables.threadId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: messagesKeys.getUserThreads,
-      });
-    },
-  });
-};
-
 export const useDeleteThreadMutation = (
   opt?: MutationOptions<
     Awaited<ReturnType<typeof MessagesAPI.deleteThread>>,
@@ -119,110 +89,3 @@ export const useGetThreadMessagesQuery = (
     queryKey: messagesKeys.getThreadMessages(threadId),
     enabled: !!threadId,
   });
-
-export const useCreateMessageMutation = (
-  opt?: MutationOptions<
-    Awaited<ReturnType<typeof MessagesAPI.createMessage>>,
-    Error,
-    CreateMessageThreadMessageDto
-  >,
-) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    ...opt,
-    mutationFn: MessagesAPI.createMessage,
-    onSuccess: (data, variables, onMutateResult, context) => {
-      void queryClient.invalidateQueries({
-        queryKey: messagesKeys.getUserThreads,
-      });
-      if (opt?.onSuccess)
-        opt.onSuccess(data, variables, onMutateResult, context);
-      queryClient.invalidateQueries({
-        queryKey: messagesKeys.getThreadMessages(variables.messageThreadId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: messagesKeys.getThread(variables.messageThreadId),
-      });
-    },
-  });
-};
-
-export const useUpdateMessageMutation = (
-  opt?: MutationOptions<
-    Awaited<ReturnType<typeof MessagesAPI.updateMessage>>,
-    Error,
-    { messageId: number; body: UpdateMessageThreadMessageDto; threadId: number }
-  >,
-) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    ...opt,
-    mutationFn: ({ messageId, body }) =>
-      MessagesAPI.updateMessage({ messageId, body }),
-    onSuccess: (data, variables, onMutateResult, context) => {
-      void queryClient.invalidateQueries({
-        queryKey: messagesKeys.getUserThreads,
-      });
-      if (opt?.onSuccess)
-        opt.onSuccess(data, variables, onMutateResult, context);
-      queryClient.invalidateQueries({
-        queryKey: messagesKeys.getThreadMessages(variables.threadId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: messagesKeys.getMessage(variables.messageId),
-      });
-    },
-  });
-};
-
-export const useDeleteMessageMutation = (
-  opt?: MutationOptions<
-    Awaited<ReturnType<typeof MessagesAPI.deleteMessage>>,
-    Error,
-    { messageId: number; threadId: number }
-  >,
-) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    ...opt,
-    mutationFn: ({ messageId }) => MessagesAPI.deleteMessage(messageId),
-    onSuccess: (data, variables, onMutateResult, context) => {
-      void queryClient.invalidateQueries({
-        queryKey: messagesKeys.getUserThreads,
-      });
-      if (opt?.onSuccess)
-        opt.onSuccess(data, variables, onMutateResult, context);
-      queryClient.invalidateQueries({
-        queryKey: messagesKeys.getThreadMessages(variables.threadId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: messagesKeys.getThread(variables.threadId),
-      });
-    },
-  });
-};
-
-export const useMarkMessagesAsReadMutation = (
-  opt?: MutationOptions<
-    void,
-    Error,
-    { threadId: number; body: MarkMessagesAsReadDto }
-  >,
-) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    ...opt,
-    mutationFn: ({ threadId, body }) =>
-      MessagesAPI.markMessagesAsRead(threadId, body),
-    onSuccess: (data, variables, onMutateResult, context) => {
-      if (opt?.onSuccess)
-        opt.onSuccess(data, variables, onMutateResult, context);
-      queryClient.invalidateQueries({
-        queryKey: messagesKeys.getThreadMessages(variables.threadId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: messagesKeys.getThread(variables.threadId),
-      });
-    },
-  });
-};

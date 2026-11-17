@@ -1,10 +1,11 @@
 import { EventType, Prisma } from '@openathlete/database';
+
+import { addZonedDays } from 'src/common/utils/time-zone';
+
 import {
   mapPrismaWorkoutToDto,
   mapWorkoutDtoToPrisma,
-} from '@openathlete/shared';
-
-import { addZonedDays } from 'src/common/utils/time-zone';
+} from '../mappers/workout.mapper';
 
 /** What can be copied or moved: plans, never activities */
 export const SHIFTABLE_TYPES = [

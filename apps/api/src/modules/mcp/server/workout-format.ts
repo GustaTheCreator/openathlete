@@ -7,6 +7,7 @@ import {
   WORKOUT_STEP_TYPE,
   WORKOUT_TARGET_TYPE,
   calculateWorkoutDuration,
+  createWorkoutSchema,
 } from '@openathlete/shared';
 
 /**
@@ -50,6 +51,10 @@ const PACE_PATTERN = /^(\d{1,2}):([0-5]\d)$/;
 const pace = z
   .string()
   .regex(PACE_PATTERN, 'Pace as m:ss per km, e.g. 4:35')
+  .refine(
+    (value) => value !== '0:00' && value !== '00:00',
+    'Pace must be greater than zero',
+  )
   .describe('Pace per kilometer as m:ss, e.g. "4:35"');
 
 const range = (unit: string, schema: z.ZodNumber) => ({
@@ -269,7 +274,7 @@ function toStoredStep(step: WorkoutStep): CreateWorkoutStepDto {
 }
 
 export function toStoredWorkout(workout: Workout): CreateWorkoutStepDto[] {
-  return workout.map((item) =>
+  const steps = workout.map((item) =>
     item.kind === 'repeat'
       ? {
           stepType: WORKOUT_STEP_TYPE.REPEAT,
@@ -284,6 +289,7 @@ export function toStoredWorkout(workout: Workout): CreateWorkoutStepDto[] {
         }
       : toStoredStep(item),
   );
+  return createWorkoutSchema.parse({ steps }).steps;
 }
 
 /** Zone ids a workout uses, to check they belong to the athlete */

@@ -1,7 +1,9 @@
 import { useGetMyEventsQuery } from '@/api/event';
 import { Calendar } from '@/components/calendar/calendar';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
+
+import { getDesktopCalendarWindow } from './calendar-window';
 
 interface P {
   athleteId: number;
@@ -10,22 +12,12 @@ interface P {
 export function AthleteCalendarView({ athleteId }: P) {
   const [displayedMonth, setDisplayedMonth] = useState(new Date());
 
-  const { startDate, endDate } = useMemo(() => {
-    const start = new Date(
-      displayedMonth.getFullYear(),
-      displayedMonth.getMonth() - 1,
-      1,
-    );
-    const end = new Date(
-      displayedMonth.getFullYear(),
-      displayedMonth.getMonth() + 2,
-      0,
-    );
-    end.setHours(23, 59, 59, 999);
-    return { startDate: start, endDate: end };
-  }, [displayedMonth]);
+  const { startDate, endDate } = useMemo(
+    () => getDesktopCalendarWindow(displayedMonth),
+    [displayedMonth],
+  );
 
-  const { data, refetch, isError, isFetching } = useGetMyEventsQuery(
+  const { data, isError, isFetching } = useGetMyEventsQuery(
     true,
     athleteId,
     startDate,
@@ -34,10 +26,6 @@ export function AthleteCalendarView({ athleteId }: P) {
       retry: false,
     },
   );
-
-  useEffect(() => {
-    refetch();
-  }, [athleteId, startDate, endDate, refetch]);
 
   const handleMonthChange = useCallback((month: Date) => {
     setDisplayedMonth(month);
