@@ -327,7 +327,7 @@ export const ApiEnvSchema = z
       .enum(['open', 'invite', 'closed'])
       .default('open')
       .describe(
-        'open: anyone can sign up; invite: only with an invitation from a coach or athlete; closed: nobody, except the first account of the instance',
+        'open: anyone can sign up; invite: only with an invitation from an authorized coach or administrator; closed: nobody, except the first account of the instance',
       ),
 
     // Where the hosted instance hears about new accounts (optional)
