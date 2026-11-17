@@ -5,6 +5,7 @@ on:
     branches: [main, tourmalet]
   pull_request:
     branches: [main, tourmalet]
+  workflow_dispatch:
 
 permissions:
   contents: read

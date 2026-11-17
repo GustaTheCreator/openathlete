@@ -18,6 +18,11 @@ Tourmalet runs the public OpenAthlete fork from `GustaTheCreator/openathlete`. D
 
 GitHub Actions runs lint, type checks, the unit suite in three time zones, database integration tests, documentation checks, end-to-end tests, application builds, deployment tests, and release-helper tests. The stable branch protection should require the single `CI passed` check, which succeeds only when every job succeeds. Before building release images, the tag workflow verifies that a successful `push` CI run exists for the exact commit on `tourmalet`; it does not repeat the full CI run.
 
+If an expected PR run is missing, the same CI workflow also supports manual
+dispatch with `gh workflow run ci.yml --ref <branch>`. Check that the run uses
+the intended commit. Manual runs do not replace the successful stable-branch
+`push` run required by the release workflow.
+
 Run the release helper tests locally with:
 
 ```sh
