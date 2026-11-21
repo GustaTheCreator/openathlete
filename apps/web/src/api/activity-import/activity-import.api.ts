@@ -2,11 +2,23 @@ import client, { routes } from '@/utils/axios';
 
 import {
   ImportedActivityDto,
+  McpConnection,
   RemoveDuplicateActivitiesResponseDto,
   SPORT_TYPE,
 } from '@openathlete/shared';
 
 export class ActivityImportAPI {
+  static async getConnections() {
+    const res = await client.get<McpConnection[]>(
+      routes.activityImport.connections,
+    );
+    return res.data;
+  }
+
+  static async revokeConnection(grantId: number) {
+    await client.delete(routes.activityImport.connection(grantId));
+  }
+
   /** One FIT file of a recorded activity, saved for the signed-in athlete. */
   static async importFit(file: File, name: string) {
     const body = new FormData();

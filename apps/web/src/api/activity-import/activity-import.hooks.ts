@@ -4,6 +4,7 @@ import {
   MutationOptions,
   QueryClient,
   useMutation,
+  useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
 
@@ -14,6 +15,24 @@ import {
 } from '@openathlete/shared';
 
 import { ActivityImportAPI } from './activity-import.api';
+
+const activityImportConnectionsKey = ['activityImportConnections'];
+
+export function useActivityImportConnectionsQuery() {
+  return useQuery({
+    queryKey: activityImportConnectionsKey,
+    queryFn: ActivityImportAPI.getConnections,
+  });
+}
+
+export function useRevokeActivityImportConnectionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ActivityImportAPI.revokeConnection,
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: activityImportConnectionsKey }),
+  });
+}
 
 const refreshImported = (
   queryClient: QueryClient,

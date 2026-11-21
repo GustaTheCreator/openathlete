@@ -46,13 +46,13 @@ test('brings visitors back to the page they asked for', async ({
 }) => {
   const athlete = await createAthlete(request);
 
-  await page.goto('/dashboard/settings?tab=ai');
+  await page.goto('/dashboard/settings?tab=connectors');
   await expect(page).toHaveURL(/\/auth\/login/);
   await page.fill('input[name="email"]', athlete.email);
   await page.fill('input[name="password"]', athlete.password);
   await page.click('button[type="submit"]');
 
-  await expect(page).toHaveURL(/\/dashboard\/settings\?tab=ai/);
+  await expect(page).toHaveURL(/\/dashboard\/settings\?tab=connectors/);
 });
 
 test('follows a returnTo link, but never to another site', async ({
@@ -69,8 +69,10 @@ test('follows a returnTo link, but never to another site', async ({
   expect(new URL(page.url()).host).not.toBe('evil.example');
 
   // Already signed in: a website link goes straight to its page
-  await page.goto('/auth/create-account?returnTo=/dashboard/settings?tab=ai');
-  await expect(page).toHaveURL(/\/dashboard\/settings\?tab=ai/);
+  await page.goto(
+    '/auth/create-account?returnTo=/dashboard/settings?tab=connectors',
+  );
+  await expect(page).toHaveURL(/\/dashboard\/settings\?tab=connectors/);
 });
 
 test('takes a new account to the onboarding after another one logged out', async ({

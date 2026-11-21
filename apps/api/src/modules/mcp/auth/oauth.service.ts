@@ -1,10 +1,17 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 
 import { OAuthClient, OAuthResource } from '@openathlete/database';
 import {
   ApiEnvSchemaType,
+  IMPORT_SCOPES,
   OAUTH_SCOPES,
   OAuthAuthorizeDetails,
   OAuthAuthorizeRequest,
@@ -32,6 +39,7 @@ const CODE_TTL_MS = 5 * 60 * 1000;
 export const ACCESS_TOKEN_TTL_S = 3600;
 const REFRESH_TOKEN_TTL_MS = 90 * 24 * 3600 * 1000;
 const UNUSED_CLIENT_TTL_MS = 30 * 24 * 3600 * 1000;
+export const MCP_FEATURES_ENABLED = Symbol('MCP_FEATURES_ENABLED');
 
 /** A request that passed every check, ready for the user's decision */
 type ValidRequest = {
@@ -86,6 +94,9 @@ export class OAuthService {
     private readonly clients: OAuthClientsService,
     config: ConfigService<ApiEnvSchemaType, true>,
     @Optional() private readonly analytics?: AnalyticsService,
+    @Optional()
+    @Inject(MCP_FEATURES_ENABLED)
+    private readonly mcpEnabled = true,
   ) {
     this.urls = mcpUrls(config);
   }
@@ -99,7 +110,9 @@ export class OAuthService {
       token_endpoint: `${issuer}/oauth/token`,
       registration_endpoint: `${issuer}/oauth/register`,
       revocation_endpoint: `${issuer}/oauth/revoke`,
-      scopes_supported: [...OAUTH_SCOPES],
+      scopes_supported: this.mcpEnabled
+        ? [...OAUTH_SCOPES]
+        : [...IMPORT_SCOPES],
       response_types_supported: ['code'],
       response_modes_supported: ['query'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
@@ -116,13 +129,15 @@ export class OAuthService {
       code_challenge_methods_supported: ['S256'],
       client_id_metadata_document_supported: true,
       authorization_response_iss_parameter_supported: true,
-      service_documentation:
-        'https://docs.openathlete.org/docs/guides/ai-agents',
+      service_documentation: this.mcpEnabled
+        ? 'https://docs.openathlete.org/docs/guides/ai-agents'
+        : 'https://docs.openathlete.org/docs/guides/activity-import-api',
     };
   }
 
   /** Protected Resource Metadata of the MCP endpoint (RFC 9728) */
   resourceMetadata() {
+    if (!this.mcpEnabled) throw new NotFoundException();
     return {
       resource: this.urls.resource,
       authorization_servers: [this.urls.issuer],
@@ -150,8 +165,12 @@ export class OAuthService {
   /** Which resource a requested resource URL names; MCP when absent */
   private resourceKind(resource: string | undefined): OAuthResource | null {
     // Clients must name the resource; older MCP ones only know the server
-    if (!resource || sameResource(resource, this.urls.resource)) return 'MCP';
-    if (sameResource(resource, this.urls.importResource)) {
+    if (
+      this.mcpEnabled &&
+      (!resource || sameResource(resource, this.urls.resource))
+    )
+      return 'MCP';
+    if (resource && sameResource(resource, this.urls.importResource)) {
       return 'ACTIVITY_IMPORT';
     }
     return null;
@@ -210,7 +229,9 @@ export class OAuthService {
     if (!resourceKind) {
       throw fail(
         'invalid_target',
-        `Resources are ${this.urls.resource} and ${this.urls.importResource}`,
+        this.mcpEnabled
+          ? `Resources are ${this.urls.resource} and ${this.urls.importResource}`
+          : `Resource is ${this.urls.importResource}`,
       );
     }
     const scopes = parseScopes(request.scope, resourceKind);
@@ -472,6 +493,7 @@ export class OAuthService {
       throw invalid;
     }
     if (stored.expiresAt < new Date()) throw invalid;
+    if (!this.mcpEnabled && stored.resource === 'MCP') throw invalid;
 
     // Exactly one exchange wins; a used token presented again was copied
     const { count } = await this.prisma.mcpToken.updateMany({

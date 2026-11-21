@@ -31,7 +31,7 @@ const providerSpecificCapabilities: Partial<
     importActivities: true,
     exportWorkouts: true,
     importMetrics: false,
-    supportsFullImport: false,
+    supportsFullImport: true,
     writeActivityDescription: false,
   },
   GARMIN: {
@@ -69,13 +69,12 @@ const providerSpecificCapabilities: Partial<
     supportsFullImport: true,
     writeActivityDescription: false,
   },
-  // Polar's API is read-only, and only serves what reached Flow after the
-  // user connected, for 30 days: no export and no history to request
+  // Polar only serves exercises uploaded in the last 30 days after consent.
   POLAR: {
     importActivities: true,
     exportWorkouts: false,
     importMetrics: true,
-    supportsFullImport: false,
+    supportsFullImport: true,
     writeActivityDescription: false,
   },
 };

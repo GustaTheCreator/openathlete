@@ -1,10 +1,8 @@
-import { useAiAccessQuery } from '@/api/ai-settings';
 import { useGetMyAthleteQuery } from '@/api/athlete';
 import {
   useDeleteEventMutation,
   useDeleteEventSeriesMutation,
 } from '@/api/event';
-import { SparklesIcon } from '@/components/ui/sparkles-icon';
 import { m } from '@/paraglide/messages';
 import { sportTypeLabelMap } from '@/utils/label-map/core/sport-type.label-map';
 import { cn } from '@/utils/shadcn';
@@ -16,17 +14,9 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-import { AiTask } from '@openathlete/shared';
-import type {
-  CreateEventDto,
-  CreateWorkoutStepDto,
-  Event,
-  SPORT_TYPE,
-  UpdateEventDto,
-} from '@openathlete/shared';
+import type { CreateEventDto, Event } from '@openathlete/shared';
 import { EVENT_TYPE } from '@openathlete/shared';
 
-import { AiSetupDialog } from '../ai-settings';
 import { useCalendarContext } from '../calendar/hooks/use-calendar-context';
 import {
   type SeriesScope,
@@ -41,7 +31,6 @@ import { RHFCheckbox } from '../hook-form/rhf-checkbox';
 import { suggestSessionName } from '../session-builder/session-name';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
-import { AIModifyEventDialog } from './components/ai-modify-event-dialog';
 import { EventFormFields } from './components/event-form-fields';
 import { RepeatFields } from './components/repeat-fields';
 import {
@@ -50,7 +39,6 @@ import {
   TrainingDetails,
 } from './components/training-fields';
 import { WorkoutSection } from './components/workout-section';
-import { useCurrentEventData } from './hooks/use-current-event-data';
 import { useEventFormSubmission } from './hooks/use-event-form-submission';
 import { useWorkoutDuration } from './hooks/use-workout-duration';
 import { useWorkoutSteps } from './hooks/use-workout-steps';
@@ -163,21 +151,12 @@ export function CreateEventDialog({ open, onClose, ...rest }: P) {
     durationSetByHand,
     setDurationByHand,
     followWorkout,
-    adoptStepsDuration,
   } = useWorkoutDuration(
     workoutSteps,
     sportValue,
     getValues,
     setValue,
     workoutAthleteId,
-  );
-
-  // Get current event data for AI modification
-  const { currentEventData } = useCurrentEventData(
-    rest,
-    watch,
-    workoutSteps,
-    athleteId ?? 0,
   );
 
   // A repeated session asks whether the change covers the following ones
@@ -271,144 +250,6 @@ export function CreateEventDialog({ open, onClose, ...rest }: P) {
     }
   };
 
-  // AI modification/generation dialog state
-  const [aiDialogOpen, setAiDialogOpen] = useState(false);
-  const [aiSetupOpen, setAiSetupOpen] = useState(false);
-
-  // The AI creates an empty session and modifies a written one; a name
-  // the builder suggested does not make it written
-  const formName = watch('name');
-  const isCreateMode =
-    !formName ||
-    formName.trim() === '' ||
-    (create && workoutSteps.length === 0);
-
-  // AI generates an empty event, or modifies a filled one, once the user
-  // allowed their data to be sent to it
-  const { data: aiAccess } = useAiAccessQuery();
-  const hasAIAccess = Boolean(
-    aiAccess?.tasks[
-      isCreateMode ? AiTask.EVENT_GENERATION : AiTask.EVENT_MODIFICATION
-    ].available && aiAccess.dataSharingConsent,
-  );
-
-  // Handle event generation (for create mode)
-  const handleEventGenerated = (generatedEvent: CreateEventDto) => {
-    // Update form with generated event data
-    if (generatedEvent.name) setValue('name', generatedEvent.name);
-    if (generatedEvent.description !== undefined)
-      setValue('description', generatedEvent.description);
-    if (generatedEvent.startDate)
-      setValue('startDate', generatedEvent.startDate);
-    if (generatedEvent.endDate) setValue('endDate', generatedEvent.endDate);
-    if (
-      generatedEvent.type === EVENT_TYPE.TRAINING &&
-      'sport' in generatedEvent &&
-      generatedEvent.sport
-    ) {
-      setValue('sport', generatedEvent.sport);
-    }
-    if (
-      generatedEvent.type === EVENT_TYPE.TRAINING &&
-      'goalDistance' in generatedEvent
-    ) {
-      setValue('goalDistance', generatedEvent.goalDistance ?? null);
-    }
-    if (
-      generatedEvent.type === EVENT_TYPE.TRAINING &&
-      'goalElevationGain' in generatedEvent
-    ) {
-      setValue('goalElevationGain', generatedEvent.goalElevationGain ?? null);
-    }
-    if (
-      generatedEvent.type === EVENT_TYPE.TRAINING &&
-      'goalRpe' in generatedEvent
-    ) {
-      setValue('goalRpe', generatedEvent.goalRpe ?? null);
-    }
-    const generatedSteps =
-      generatedEvent.type === EVENT_TYPE.TRAINING &&
-      'workout' in generatedEvent &&
-      generatedEvent.workout?.steps
-        ? generatedEvent.workout.steps
-        : // Allow creation even without steps
-          [];
-    setWorkoutSteps(generatedSteps);
-    // A total the coach stated ("45' in all") wins over the steps' estimate
-    if (generatedEvent.type === EVENT_TYPE.TRAINING) {
-      adoptStepsDuration(
-        generatedSteps,
-        generatedEvent.goalDuration,
-        generatedEvent.sport,
-      );
-    }
-  };
-
-  // Handle event modification (for edit mode)
-  const handleEventModified = (modifiedEvent: UpdateEventDto) => {
-    const isTraining = modifiedEvent.type === EVENT_TYPE.TRAINING;
-    const trainingEventData = isTraining
-      ? (modifiedEvent as UpdateEventDto & {
-          type: EVENT_TYPE.TRAINING;
-          sport?: SPORT_TYPE;
-          goalDuration?: number | null;
-          goalDistance?: number | null;
-          goalElevationGain?: number | null;
-          goalRpe?: number | null;
-          workout?: { steps: CreateWorkoutStepDto[] } | null;
-        })
-      : null;
-    // Update form with modified event data
-    if (modifiedEvent.name) setValue('name', modifiedEvent.name);
-    if (modifiedEvent.description !== undefined)
-      setValue('description', modifiedEvent.description);
-    if (modifiedEvent.startDate) setValue('startDate', modifiedEvent.startDate);
-    if (modifiedEvent.endDate) setValue('endDate', modifiedEvent.endDate);
-    if (isTraining && trainingEventData?.sport) {
-      setValue('sport', trainingEventData.sport);
-    }
-    if (
-      isTraining &&
-      trainingEventData &&
-      'goalDistance' in trainingEventData
-    ) {
-      setValue('goalDistance', trainingEventData.goalDistance ?? null);
-    }
-    if (
-      isTraining &&
-      trainingEventData &&
-      'goalElevationGain' in trainingEventData
-    ) {
-      setValue(
-        'goalElevationGain',
-        trainingEventData.goalElevationGain ?? null,
-      );
-    }
-    if (isTraining && trainingEventData && 'goalRpe' in trainingEventData) {
-      setValue('goalRpe', trainingEventData.goalRpe ?? null);
-    }
-    // Always update workout steps for training events, even if empty
-    // This ensures that AI modifications (including removal of steps) are reflected
-    if (isTraining && trainingEventData) {
-      // Clear steps if workout is empty or doesn't exist
-      const modifiedSteps = trainingEventData.workout?.steps ?? [];
-      setWorkoutSteps(modifiedSteps);
-      // An unchanged duration keeps its mode: one that followed the old
-      // steps follows the new ones
-      if (
-        'goalDuration' in trainingEventData &&
-        (trainingEventData.goalDuration ?? null) !==
-          (getValues('goalDuration') ?? null)
-      ) {
-        adoptStepsDuration(
-          modifiedSteps,
-          trainingEventData.goalDuration,
-          trainingEventData.sport,
-        );
-      }
-    }
-  };
-
   // Until the coach names it, the session takes the name of its content
   const nameSuggestion = useMemo(
     () =>
@@ -444,28 +285,6 @@ export function CreateEventDialog({ open, onClose, ...rest }: P) {
   ) {
     return null;
   }
-
-  const aiButton = type === EVENT_TYPE.TRAINING && (
-    <Button
-      type="button"
-      onClick={() => {
-        if (hasAIAccess) {
-          setAiDialogOpen(true);
-        } else {
-          setAiSetupOpen(true);
-        }
-      }}
-      variant="outline"
-      size="sm"
-      className="text-xs md:text-sm"
-    >
-      <SparklesIcon className="w-3 h-3 md:w-4 md:h-4" />
-      <span className="hidden sm:inline">
-        {isCreateMode ? m.create_with_ai() : m.modify_with_ai()}
-      </span>
-      <span className="sm:hidden">{m.ui_ai()} </span>
-    </Button>
-  );
 
   const actions = (
     <div className="flex flex-col items-stretch gap-3 max-md:sticky max-md:-bottom-4 max-md:z-10 max-md:-mx-4 max-md:border-t max-md:bg-background max-md:px-4 max-md:pt-3 max-md:pb-[calc(0.75rem+var(--safe-bottom))]">
@@ -519,9 +338,8 @@ export function CreateEventDialog({ open, onClose, ...rest }: P) {
           data-session-composer
         >
           <DialogHeader className="md:border-b md:px-6 md:py-3">
-            <DialogTitle className="flex items-center gap-3 pr-8 text-sm font-medium text-muted-foreground md:pr-10">
-              <span className="grow">{title}</span>
-              {aiButton}
+            <DialogTitle className="pr-8 text-sm font-medium text-muted-foreground md:pr-10">
+              {title}
             </DialogTitle>
           </DialogHeader>
           <FormProvider
@@ -600,23 +418,6 @@ export function CreateEventDialog({ open, onClose, ...rest }: P) {
           </FormProvider>
         </DialogContent>
       )}
-      {currentEventData && (
-        <AIModifyEventDialog
-          open={aiDialogOpen}
-          onClose={() => setAiDialogOpen(false)}
-          eventData={currentEventData}
-          date={create ? rest.date : undefined}
-          isCreateMode={isCreateMode}
-          analyticsSource="event_dialog"
-          onEventGenerated={handleEventGenerated}
-          onEventModified={handleEventModified}
-        />
-      )}
-      <AiSetupDialog
-        open={aiSetupOpen}
-        onOpenChange={setAiSetupOpen}
-        analyticsSource="event_dialog"
-      />
       <SeriesScopeDialog
         open={!!scopeRequest}
         action={scopeRequest?.action ?? 'edit'}

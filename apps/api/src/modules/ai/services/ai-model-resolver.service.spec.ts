@@ -61,6 +61,7 @@ interface Setup {
   quotaExhausted?: number[];
   /** Users who have not allowed their data to be sent to AI providers */
   notConsented?: number[];
+  featuresEnabled?: boolean;
 }
 
 function setup({
@@ -72,6 +73,7 @@ function setup({
   coaches = [],
   quotaExhausted = [],
   notConsented = [],
+  featuresEnabled = true,
 }: Setup = {}) {
   const prisma = {
     user: {
@@ -137,11 +139,42 @@ function setup({
     usage as never,
     cipher,
     env,
+    featuresEnabled,
   );
-  return { resolver, subscriptions };
+  return { resolver, subscriptions, prisma, usage };
 }
 
 describe('AiModelResolverService', () => {
+  it('does not resolve user or background models while product AI is disabled', async () => {
+    const { resolver, prisma, usage } = setup({
+      featuresEnabled: false,
+      preferences: [
+        preference(
+          1,
+          AiTask.EVENT_GENERATION,
+          'openai',
+          'gpt-5-mini',
+          'sk-key',
+        ),
+      ],
+      subscribers: [1],
+      env: { OPENAI_API_KEY: 'instance-key' },
+    });
+
+    await expect(
+      resolver.tryResolveForUser(AiTask.EVENT_GENERATION, 1),
+    ).resolves.toBeNull();
+    await expect(
+      resolver.tryResolveForAthlete(AiTask.ACTIVITY_SUMMARY, 1),
+    ).resolves.toBeNull();
+    await expect(
+      resolver.resolveForUser(AiTask.EVENT_GENERATION, 1),
+    ).rejects.toThrow(AiNotConfiguredException);
+    expect(prisma.aiModelPreference.findMany).not.toHaveBeenCalled();
+    expect(prisma.athlete.findUnique).not.toHaveBeenCalled();
+    expect(usage.hasHostedAllowanceLeft).not.toHaveBeenCalled();
+  });
+
   describe('own keys', () => {
     it("runs on the user's model for the task, with their key", async () => {
       const { resolver } = setup({

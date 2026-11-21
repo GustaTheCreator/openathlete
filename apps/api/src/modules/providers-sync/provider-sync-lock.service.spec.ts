@@ -1,4 +1,4 @@
-import { ProviderExportLockService } from './provider-export-lock.service';
+import { ProviderSyncLockService } from './provider-sync-lock.service';
 
 function setup() {
   const leases = new Map<string, { owner: string; expiresAt: number }>();
@@ -9,21 +9,21 @@ function setup() {
       const key = String(keyValue);
       const owner = String(ownerValue);
       const current = leases.get(key);
-      if (command === 'providerExportLockacquire') {
+      if (command === 'providerSyncLockacquire') {
         if (current && current.expiresAt > Date.now()) return null;
         leases.set(key, { owner, expiresAt: Date.now() + Number(ttlValue) });
         return 'OK';
       }
       if (!current || current.expiresAt <= Date.now()) return 0;
-      if (command === 'providerExportLockassert') {
+      if (command === 'providerSyncLockassert') {
         return current.owner === owner ? 1 : 0;
       }
-      if (command === 'providerExportLockrenew') {
+      if (command === 'providerSyncLockrenew') {
         if (current.owner !== owner) return 0;
         current.expiresAt = Date.now() + Number(ttlValue);
         return 1;
       }
-      if (command === 'providerExportLockrelease') {
+      if (command === 'providerSyncLockrelease') {
         if (current.owner !== owner) return 0;
         leases.delete(key);
         return 1;
@@ -31,13 +31,13 @@ function setup() {
       throw new Error(`Unexpected Redis command: ${command}`);
     }),
   };
-  const service = new ProviderExportLockService({
+  const service = new ProviderSyncLockService({
     client: Promise.resolve(redis),
   } as never);
   return { service, redis, leases };
 }
 
-describe('ProviderExportLockService', () => {
+describe('ProviderSyncLockService', () => {
   it('waits for the current owner, then acquires the released lease', async () => {
     const { service, redis } = setup();
     let allowFirstToFinish!: () => void;
@@ -46,15 +46,14 @@ describe('ProviderExportLockService', () => {
     const blocked = new Promise<void>(
       (resolve) => (allowFirstToFinish = resolve),
     );
-    const first = service.withLock(9, async () => {
+    const first = service.withActivityImportLock(9, async () => {
       firstEntered();
       await blocked;
     });
     await entered;
 
     let secondRan = false;
-    const second = service.withLock(9, async (assertHeld) => {
-      await assertHeld();
+    const second = service.withActivityImportLock(9, async () => {
       secondRan = true;
     });
     allowFirstToFinish();
@@ -63,7 +62,7 @@ describe('ProviderExportLockService', () => {
     expect(secondRan).toBe(true);
     expect(
       redis.runCommand.mock.calls.filter(
-        ([command]) => command === 'providerExportLockacquire',
+        ([command]) => command === 'providerSyncLockacquire',
       ),
     ).toHaveLength(3);
   });
@@ -84,12 +83,12 @@ describe('ProviderExportLockService', () => {
     jest.useFakeTimers();
     const { service, redis } = setup();
     redis.runCommand.mockImplementation(async (command: string) =>
-      command === 'providerExportLockacquire' ? null : 0,
+      command === 'providerSyncLockacquire' ? null : 0,
     );
 
     const work = service.withLock(10, async () => undefined);
     const rejected = expect(work).rejects.toThrow(
-      'Timed out waiting for workout export lock 10',
+      'Timed out waiting for lock provider-workout-export-lock:10',
     );
     try {
       await jest.advanceTimersByTimeAsync(60_000);
@@ -111,7 +110,7 @@ describe('ProviderExportLockService', () => {
         });
         await assertHeld();
       }),
-    ).rejects.toThrow('Lost workout export lock 11');
+    ).rejects.toThrow('Lost lock provider-workout-export-lock:11');
 
     expect(leases.get(key)?.owner).toBe('replacement-owner');
   });
@@ -122,7 +121,7 @@ describe('ProviderExportLockService', () => {
     const runCommand = redis.runCommand.getMockImplementation();
     if (!runCommand) throw new Error('Expected Redis command implementation');
     redis.runCommand.mockImplementation(async (command, args) =>
-      command === 'providerExportLockrenew' ? 0 : runCommand(command, args),
+      command === 'providerSyncLockrenew' ? 0 : runCommand(command, args),
     );
     let entered!: () => void;
     let finish!: () => void;
@@ -133,7 +132,7 @@ describe('ProviderExportLockService', () => {
       await blocked;
     });
     const rejected = expect(work).rejects.toThrow(
-      'Lost workout export lock 12',
+      'Lost lock provider-workout-export-lock:12',
     );
 
     try {
@@ -151,7 +150,7 @@ describe('ProviderExportLockService', () => {
     const runCommand = redis.runCommand.getMockImplementation();
     if (!runCommand) throw new Error('Expected Redis command implementation');
     redis.runCommand.mockImplementation(async (command, args) => {
-      if (command === 'providerExportLockrelease') {
+      if (command === 'providerSyncLockrelease') {
         throw new Error('Redis cleanup failed');
       }
       return runCommand(command, args);

@@ -26,7 +26,7 @@ import {
   GarminPersonalScheduler,
 } from './garmin-personal/garmin-personal-processor';
 import { GarminPersonalService } from './garmin-personal/garmin-personal-service';
-import { ProviderExportLockService } from './provider-export-lock.service';
+import { ProviderSyncLockService } from './provider-sync-lock.service';
 import {
   CorosProviderService,
   GarminProviderService,
@@ -65,7 +65,7 @@ import { ProviderExportScheduler } from './scheduler.service';
     WahooAdapter,
     WahooAuthorizationGuard,
     ProviderExportService,
-    ProviderExportLockService,
+    ProviderSyncLockService,
     ProviderExportScheduler,
     StravaProviderService,
     GarminProviderService,
@@ -77,6 +77,7 @@ import { ProviderExportScheduler } from './scheduler.service';
   ],
   exports: [
     ActivityDescriptionService,
+    ProviderSyncLockService,
     ProviderExportService,
     StravaProviderService,
     GarminProviderService,

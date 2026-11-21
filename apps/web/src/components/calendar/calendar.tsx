@@ -1,4 +1,3 @@
-import { useAiTaskAvailable } from '@/api/ai-settings';
 import { useGetMyAthleteQuery } from '@/api/athlete';
 import { CalendarAPI } from '@/api/calendar/calendar.api';
 import { useGetMyCyclesQuery, useUpdateCycleMutation } from '@/api/cycle';
@@ -40,14 +39,7 @@ import { cn } from '@/utils/shadcn';
 import { DragEndEvent } from '@dnd-kit/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { format, isValid, parseISO } from 'date-fns';
-import {
-  Activity,
-  Award,
-  Copy,
-  Plus,
-  Sparkles,
-  StickyNote,
-} from 'lucide-react';
+import { Activity, Award, Copy, Plus, StickyNote } from 'lucide-react';
 import { usePostHog } from 'posthog-js/react';
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -55,7 +47,6 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import {
-  AiTask,
   CreateEventDto,
   Cycle,
   DAILY_WELLNESS_SIGNALS,
@@ -64,8 +55,6 @@ import {
   EventTemplate,
 } from '@openathlete/shared';
 
-import { AIGenerateEventDialog } from '../ai-generate-event-dialog/ai-generate-event.dialog';
-import { AiSetupDialog } from '../ai-settings';
 import { CreateCycleDialog } from '../create-cycle-dialog';
 import { CreateEventDialog } from '../create-event-dialog';
 import { CreateEventFromTemplateDialog } from '../create-event-from-template-dialog/create-event-from-template.dialog';
@@ -143,10 +132,6 @@ export function Calendar({
     [goToWeek, displayedMonth, updateDisplay],
   );
   const { data: cycles } = useGetMyCyclesQuery(undefined, athleteId);
-  const { available: hasAIAccess } = useAiTaskAvailable(
-    AiTask.EVENT_GENERATION,
-  );
-  const [aiSetupOpen, setAiSetupOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const weekRangeStart = calendarData.displayedWeeks[0]?.[0];
   const weekRangeEnd =
@@ -431,8 +416,6 @@ export function Calendar({
   } | null>(null);
   const [createEventFromTemplateDialog, setCreateEventFromTemplateDialog] =
     useState<Date | null>(null);
-  const [aiGenerateEventDialog, setAIGenerateEventDialog] =
-    useState<Date | null>(null);
   const [editEventDialog, setEditEventDialog] = useState<
     Event['eventId'] | null
   >(null);
@@ -578,7 +561,6 @@ export function Calendar({
         setCreateEventDialog({ date, type });
       },
       createEventFromTemplate: setCreateEventFromTemplateDialog,
-      createEventWithAI: setAIGenerateEventDialog,
       openEventDetails,
       eventDetailsOpened,
       editEvent: (eventId) => setEditEventDialog(eventId),
@@ -807,18 +789,8 @@ export function Calendar({
       },
     ];
 
-    // Shown without AI too: it leads to the AI settings
-    actions.splice(2, 0, {
-      label: m.create_with_ai(),
-      icon: Sparkles,
-      onClick: () =>
-        hasAIAccess
-          ? setAIGenerateEventDialog(planningDate)
-          : setAiSetupOpen(true),
-    });
-
     return actions;
-  }, [isMobile, allowCreate, hasAIAccess, planningDate]);
+  }, [isMobile, allowCreate, planningDate]);
 
   // Handle global mouse up to end drag selection and cycle resize
   useEffect(() => {
@@ -940,30 +912,9 @@ export function Calendar({
                 type={createEventDialog?.type}
                 prefilledData={createEventDialog?.prefilledData}
               />
-              <AiSetupDialog
-                open={aiSetupOpen}
-                onOpenChange={setAiSetupOpen}
-                analyticsSource="calendar_mobile"
-              />
               <CalendarShortcutsDialog
                 open={shortcutsOpen}
                 onOpenChange={setShortcutsOpen}
-              />
-              <AIGenerateEventDialog
-                open={aiGenerateEventDialog !== null}
-                onClose={() => {
-                  setAIGenerateEventDialog(null);
-                }}
-                date={aiGenerateEventDialog || new Date()}
-                athleteId={athleteId}
-                onEventGenerated={(event) => {
-                  setAIGenerateEventDialog(null);
-                  setCreateEventDialog({
-                    date: event.startDate,
-                    type: event.type,
-                    prefilledData: event,
-                  });
-                }}
               />
               <CreateEventDialog
                 key={editEventDialog}

@@ -39,6 +39,7 @@ export class CorosSyncProcessor extends WorkerHost {
       await this.corosProviderService.importHistoryBatch(
         data.providerAccountId,
         data.activities,
+        data.externalUserId,
       );
     }
   }

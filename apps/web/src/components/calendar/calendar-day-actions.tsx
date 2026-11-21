@@ -1,4 +1,3 @@
-import { useAiTaskAvailable } from '@/api/ai-settings';
 import { useDuplicateEventMutation } from '@/api/event';
 import { m } from '@/paraglide/messages';
 import {
@@ -12,11 +11,10 @@ import {
 import { ComponentProps, ComponentType } from 'react';
 import { toast } from 'sonner';
 
-import { AiTask, EVENT_TYPE } from '@openathlete/shared';
+import { EVENT_TYPE } from '@openathlete/shared';
 
 import { ContextMenuItem, ContextMenuSeparator } from '../ui/context-menu';
 import { DropdownMenuItem, DropdownMenuSeparator } from '../ui/dropdown-menu';
-import { SparklesIcon } from '../ui/sparkles-icon';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { useEventClipboard } from './contexts/event-clipboard-context';
 import { useCalendarContext } from './hooks/use-calendar-context';
@@ -44,20 +42,13 @@ const MENUS = {
 export function CalendarDayActions({
   day,
   menu,
-  onAiSetupNeeded,
 }: {
   day: Date;
   menu: keyof typeof MENUS;
-  /** No AI model is available: lead to the AI settings */
-  onAiSetupNeeded: () => void;
 }) {
   const { Item, Separator } = MENUS[menu];
-  const { createEvent, createEventFromTemplate, createEventWithAI } =
-    useCalendarContext();
+  const { createEvent, createEventFromTemplate } = useCalendarContext();
   const { clipboard, hasClipboard } = useEventClipboard();
-  const { available: hasAIAccess } = useAiTaskAvailable(
-    AiTask.EVENT_GENERATION,
-  );
   const duplicateEventMutation = useDuplicateEventMutation({
     onSuccess: () => {
       toast.success(m.event_created_successfully());
@@ -105,15 +96,6 @@ export function CalendarDayActions({
           <TooltipContent>{m.nothing_to_paste()}</TooltipContent>
         )}
       </Tooltip>
-      <Separator />
-      <Item
-        onClick={() =>
-          hasAIAccess ? createEventWithAI(day) : onAiSetupNeeded()
-        }
-      >
-        <SparklesIcon className="mr-2 h-4 w-4" />
-        {m.create_with_ai()}
-      </Item>
       <Separator />
       <Item onClick={() => createEventFromTemplate(day)}>
         <FileText className="mr-2 h-4 w-4" />

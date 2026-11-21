@@ -338,6 +338,24 @@ describe('PolarProviderService import', () => {
     );
   });
 
+  it('queues bounded historical activities once', async () => {
+    const { service, queue } = setup();
+    http.get.mockResolvedValue({ status: 200, data: [documentedExercise] });
+
+    await expect(
+      service.queueFullImport(account, {
+        startDate: new Date('2008-10-13T00:00:00.000Z'),
+        endDate: new Date('2008-10-13T23:59:59.999Z'),
+      }),
+    ).resolves.toEqual({ queuedActivities: 1 });
+
+    expect(queue.addActivityImportJobs).toHaveBeenCalledWith(
+      account,
+      [expect.objectContaining({ externalId: '2AC312F' })],
+      true,
+    );
+  });
+
   it('saves the session even without its file', async () => {
     const { service, prisma } = setup();
     http.get.mockResolvedValueOnce({ status: 200, data: [documentedExercise] });

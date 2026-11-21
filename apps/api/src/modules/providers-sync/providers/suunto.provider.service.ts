@@ -581,6 +581,7 @@ export class SuuntoProviderService
   async importActivities(
     account: ProviderAccount,
     options?: ImportOptions,
+    filterByModificationTime = true,
   ): Promise<ImportedActivity[]> {
     const limit = options?.limit ?? Number.POSITIVE_INFINITY;
     const activities: ImportedActivity[] = [];
@@ -616,7 +617,7 @@ export class SuuntoProviderService
                     until: endTime,
                     limit: pageSize,
                     offset,
-                    'filter-by-modification-time': true,
+                    'filter-by-modification-time': filterByModificationTime,
                   },
                   timeout: 15000,
                 },
@@ -628,7 +629,11 @@ export class SuuntoProviderService
             } catch (error) {
               // 403 (a revoked access, a wrong subscription key) is an
               // error to see, not an empty history
-              if (isAxiosError(error) && error.response?.status === 400) {
+              if (
+                filterByModificationTime &&
+                isAxiosError(error) &&
+                error.response?.status === 400
+              ) {
                 this.logger.debug(
                   `Suunto API returned ${error.response?.status}, returning empty result`,
                 );
@@ -953,9 +958,15 @@ export class SuuntoProviderService
   /**
    * Queue full import of activities
    */
-  async queueFullImport(account: ProviderAccount): Promise<FullImportResult> {
-    const endDate = new Date();
-    const startDate = new Date(endDate.getTime() - this.importWindowMs);
+  async queueFullImport(
+    account: ProviderAccount,
+    options?: ImportOptions,
+  ): Promise<FullImportResult> {
+    const endDate = options?.endDate ?? new Date();
+    const startDate =
+      options === undefined
+        ? new Date(endDate.getTime() - this.importWindowMs)
+        : (options.startDate ?? new Date(0));
 
     if (account.importMetricsEnabled) {
       // The 24/7 history Suunto serves, from the day after the first, which
@@ -968,10 +979,15 @@ export class SuuntoProviderService
     }
 
     try {
-      const activities = await this.importActivities(account, {
-        startDate,
-        endDate,
-      });
+      const activities = await this.importActivities(
+        account,
+        {
+          ...options,
+          startDate,
+          endDate,
+        },
+        false,
+      );
 
       if (activities.length === 0) {
         return { queuedActivities: 0 };

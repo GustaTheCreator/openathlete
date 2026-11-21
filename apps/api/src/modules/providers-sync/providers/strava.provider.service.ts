@@ -369,11 +369,20 @@ export class StravaProviderService
         account,
         async (accessToken) => {
           const response = await axios.get<StravaSummaryActivity[]>(
-            // 200 is the largest page Strava allows: 7x fewer rate-limited calls
-            `https://www.strava.com/api/v3/athlete/activities?page=${page}&per_page=200`,
+            'https://www.strava.com/api/v3/athlete/activities',
             {
               headers: {
                 Authorization: `Bearer ${accessToken}`,
+              },
+              params: {
+                page,
+                per_page: 200,
+                ...(options?.startDate && {
+                  after: Math.floor(options.startDate.getTime() / 1000) - 1,
+                }),
+                ...(options?.endDate && {
+                  before: Math.floor(options.endDate.getTime() / 1000) + 1,
+                }),
               },
               // Pages of 200 activities regularly took more than 15s
               timeout: 30000,
@@ -441,23 +450,13 @@ export class StravaProviderService
       throw new Error('Athlete not found');
     }
 
-    // Create event
-    const event = await this.prisma.event.create({
-      data: {
-        athleteId: athlete.athleteId,
-        name: activity.name,
-        type: EventType.ACTIVITY,
-        startDate: activity.startDate,
-        endDate: activity.endDate,
-      },
-    });
-
     // Fetch full activity data with streams
     const stravaActivity = activity.raw as StravaSummaryActivity;
     const savedActivity = await this.fetchStravaActivityData(
       account,
-      event,
+      athlete.athleteId,
       stravaActivity,
+      activity,
     );
 
     return { activity: savedActivity, created: true };
@@ -468,8 +467,9 @@ export class StravaProviderService
    */
   private async fetchStravaActivityData(
     account: ProviderAccount,
-    event: { eventId: number },
+    athleteId: number,
     activity: StravaSummaryActivity,
+    importedActivity: ImportedActivity,
   ): Promise<EventActivity> {
     const shouldFetchStreams = !activity.manual;
 
@@ -547,8 +547,12 @@ export class StravaProviderService
         stream: compressedActivityStream as object,
         externalId: activity.id.toString(),
         event: {
-          connect: {
-            eventId: event.eventId,
+          create: {
+            athleteId,
+            name: importedActivity.name,
+            type: EventType.ACTIVITY,
+            startDate: importedActivity.startDate,
+            endDate: importedActivity.endDate,
           },
         },
       },
@@ -561,14 +565,17 @@ export class StravaProviderService
    * Import initial activities from Strava when connecting
    * Fetches activities and adds them to the import queue
    */
-  async queueFullImport(account: ProviderAccount): Promise<FullImportResult> {
+  async queueFullImport(
+    account: ProviderAccount,
+    options?: ImportOptions,
+  ): Promise<FullImportResult> {
     this.logger.log(
       `Queueing Strava historical import for account ${account.providerAccountId}`,
     );
 
     try {
       // Fetch all activities using importActivities
-      const activities = await this.importActivities(account);
+      const activities = await this.importActivities(account, options);
 
       this.logger.log(
         `Fetched ${activities.length} activities from Strava for account ${account.providerAccountId}`,

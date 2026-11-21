@@ -9,6 +9,7 @@ import {
 import {
   ActivityDescriptionPreviewQueryDto,
   ConnectorProvider,
+  ProviderFullImportRequestDto,
   ProviderPreferencesDto,
   isFullImportInProgress,
 } from '@openathlete/shared';
@@ -122,14 +123,14 @@ export const useImportAllActivitiesMutation = (
   opt?: MutationOptions<
     Awaited<ReturnType<typeof ProviderAPI.importAllActivities>>,
     Error,
-    ConnectorProvider
+    { provider: ConnectorProvider; request: ProviderFullImportRequestDto }
   >,
 ) => {
   const queryClient = useQueryClient();
   return useMutation({
     ...opt,
-    mutationFn: (provider: ConnectorProvider) =>
-      ProviderAPI.importAllActivities(provider),
+    mutationFn: ({ provider, request }) =>
+      ProviderAPI.importAllActivities(provider, request),
     onSuccess: (data, variables, onMutateResult, context) => {
       if (opt?.onSuccess) {
         opt.onSuccess(data, variables, onMutateResult, context);

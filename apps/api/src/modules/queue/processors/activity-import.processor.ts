@@ -1,10 +1,14 @@
-import { Job } from 'bullmq';
+import { DelayedError, Job } from 'bullmq';
 
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Logger, Optional, forwardRef } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
-import { ConnectorProvider, EventType } from '@openathlete/database';
+import {
+  ConnectorProvider,
+  EventType,
+  ProviderAccount,
+} from '@openathlete/database';
 
 import { AnalyticsService } from 'src/modules/analytics/analytics.service';
 import { reportJobFailure } from 'src/modules/analytics/job-failure';
@@ -16,10 +20,9 @@ import {
   AFTER_DUPLICATE_DELAY_MS,
   ActivityDescriptionService,
 } from '../../providers-sync/activity-description/activity-description.service';
-import {
-  ImportResult,
-  ImportedActivity,
-} from '../../providers-sync/base/provider-import.interface';
+import { ImportedActivity } from '../../providers-sync/base/provider-import.interface';
+import { ProviderRateLimitError } from '../../providers-sync/errors/provider-rate-limit.error';
+import { ProviderSyncLockService } from '../../providers-sync/provider-sync-lock.service';
 import {
   CorosProviderService,
   GarminProviderService,
@@ -55,6 +58,7 @@ export class ActivityImportProcessor extends WorkerHost {
     private readonly queueService: QueueService,
     @Inject(forwardRef(() => ActivityDuplicateService))
     private readonly duplicates: ActivityDuplicateService,
+    private readonly providerLock: ProviderSyncLockService,
     @Optional() private readonly emitter?: EventEmitter2,
     @Optional() private readonly analytics?: AnalyticsService,
     @Optional()
@@ -116,7 +120,31 @@ export class ActivityImportProcessor extends WorkerHost {
     });
   }
 
-  async process(job: Job<ActivityImportJobData>) {
+  private importFromProvider(
+    account: ProviderAccount,
+    activity: ImportedActivity,
+  ) {
+    switch (account.provider) {
+      case ConnectorProvider.STRAVA:
+        return this.stravaProviderService.importActivity(account, activity);
+      case ConnectorProvider.GARMIN:
+        return this.garminProviderService.importActivity(account, activity);
+      case ConnectorProvider.POLAR:
+        return this.polarProviderService.importActivity(account, activity);
+      case ConnectorProvider.SUUNTO:
+        return this.suuntoProviderService.importActivity(account, activity);
+      case ConnectorProvider.COROS:
+        return this.corosProviderService.importActivity(account, activity);
+      case ConnectorProvider.WAHOO:
+        return this.wahooProviderService.importActivity(account, activity);
+      default:
+        throw new Error(
+          `Provider ${account.provider} does not support activity import yet`,
+        );
+    }
+  }
+
+  async process(job: Job<ActivityImportJobData>, token?: string) {
     const { providerAccountId, activity, bulkImport } = job.data;
 
     try {
@@ -145,10 +173,25 @@ export class ActivityImportProcessor extends WorkerHost {
         return;
       }
 
-      // Skipped rather than saved twice: a later sync or webhook of the same
-      // activity comes here again and is skipped again
-      const copy = await this.savedCopy(account, activity);
-      if (copy) {
+      if (
+        job.data.providerExternalUserId !== undefined &&
+        job.data.providerExternalUserId !== account.externalUserId
+      ) {
+        return { success: true, skipped: 'provider-account-changed' };
+      }
+
+      // The cross-provider lookup and save must be serialized for an athlete.
+      const imported = await this.providerLock.withActivityImportLock(
+        account.athleteId,
+        async () => {
+          const copy = await this.savedCopy(account, activity);
+          if (copy) return { copy };
+          await job.updateProgress(30);
+          return { result: await this.importFromProvider(account, activity) };
+        },
+      );
+      if (imported.copy) {
+        const { copy } = imported;
         this.logger.debug(
           `Skipping ${account.provider} activity ${activity.externalId}: event ${copy.eventId} from another source records the same workout`,
         );
@@ -176,46 +219,7 @@ export class ActivityImportProcessor extends WorkerHost {
         return { success: true, skipped: 'duplicate', eventId: copy.eventId };
       }
 
-      await job.updateProgress(30);
-
-      let result: ImportResult;
-      if (account.provider === ConnectorProvider.STRAVA) {
-        result = await this.stravaProviderService.importActivity(
-          account,
-          activity,
-        );
-      } else if (account.provider === ConnectorProvider.GARMIN) {
-        result = await this.garminProviderService.importActivity(
-          account,
-          activity,
-        );
-      } else if (account.provider === ConnectorProvider.POLAR) {
-        result = await this.polarProviderService.importActivity(
-          account,
-          activity,
-        );
-      } else if (account.provider === ConnectorProvider.SUUNTO) {
-        result = await this.suuntoProviderService.importActivity(
-          account,
-          activity,
-        );
-      } else if (account.provider === ConnectorProvider.COROS) {
-        result = await this.corosProviderService.importActivity(
-          account,
-          activity,
-        );
-      } else if (account.provider === ConnectorProvider.WAHOO) {
-        result = await this.wahooProviderService.importActivity(
-          account,
-          activity,
-        );
-      } else {
-        throw new Error(
-          `Provider ${account.provider} does not support activity import yet`,
-        );
-      }
-
-      const { activity: savedActivity, created } = result;
+      const { activity: savedActivity, created } = imported.result;
 
       // Only the import that saved the activity announces it: a webhook
       // retry or a later sync of the same activity finds it already there
@@ -264,6 +268,10 @@ export class ActivityImportProcessor extends WorkerHost {
         eventId: savedActivity.eventId,
       };
     } catch (error) {
+      if (error instanceof ProviderRateLimitError) {
+        await job.moveToDelayed(Date.now() + error.retryAfterMs, token);
+        throw new DelayedError();
+      }
       this.logger.error(
         `Job ${job.id} failed: ${error instanceof Error ? error.message : String(error)}`,
         error instanceof Error ? error.stack : undefined,

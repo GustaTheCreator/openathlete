@@ -15,7 +15,7 @@ import {
 } from './adapters';
 import { mapToCoros, mapToGarmin, mapToSuunto } from './mapping';
 import type { ProviderAdapter } from './provider-adapter.interface';
-import { ProviderExportLockService } from './provider-export-lock.service';
+import { ProviderSyncLockService } from './provider-sync-lock.service';
 
 type ProviderKey = 'garmin' | 'suunto' | 'coros' | 'wahoo';
 type ProviderEnum = 'GARMIN' | 'SUUNTO' | 'COROS' | 'WAHOO';
@@ -45,7 +45,7 @@ export class ProviderExportService {
     suuntoAdapter: SuuntoAdapter,
     corosAdapter: CorosAdapter,
     wahooAdapter: WahooAdapter,
-    private readonly exportLock: ProviderExportLockService,
+    private readonly exportLock: ProviderSyncLockService,
     @Optional() private readonly analytics?: AnalyticsService,
   ) {
     this.adapters = {

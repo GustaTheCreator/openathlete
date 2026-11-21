@@ -9,7 +9,6 @@ import { useRef, useState } from 'react';
 
 import { Event } from '@openathlete/shared';
 
-import { AiSetupDialog } from '../ai-settings';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -59,7 +58,6 @@ export function CalendarDay({
   const [fileOver, setFileOver] = useState(false);
   const draggingFiles = (event: React.DragEvent) =>
     !!importFiles && event.dataTransfer.types.includes('Files');
-  const [aiSetupOpen, setAiSetupOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   // A left press on this day's empty area that has not left the day yet:
   // released here, it is a click (planning menu); elsewhere, a drag (cycle)
@@ -317,19 +315,10 @@ export function CalendarDay({
         </ContextMenuTrigger>
         {allowCreate && (
           <ContextMenuContent className="w-64">
-            <CalendarDayActions
-              day={day}
-              menu="context"
-              onAiSetupNeeded={() => setAiSetupOpen(true)}
-            />
+            <CalendarDayActions day={day} menu="context" />
           </ContextMenuContent>
         )}
       </ContextMenu>
-      <AiSetupDialog
-        open={aiSetupOpen}
-        onOpenChange={setAiSetupOpen}
-        analyticsSource="calendar_day"
-      />
     </div>
   );
 }

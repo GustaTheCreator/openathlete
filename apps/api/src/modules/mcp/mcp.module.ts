@@ -4,27 +4,23 @@ import { AuthModule } from '../auth';
 import { CoreModule } from '../core';
 import { OAuthClientsService } from './auth/oauth-clients.service';
 import { OAuthTokensModule } from './auth/oauth-tokens.module';
-import { OAuthService } from './auth/oauth.service';
-import { McpConnectionsController } from './controllers/mcp-connections.controller';
-import { McpController } from './controllers/mcp.controller';
+import { MCP_FEATURES_ENABLED, OAuthService } from './auth/oauth.service';
+import { ActivityImportConnectionsController } from './controllers/activity-import-connections.controller';
 import { OAuthController } from './controllers/oauth.controller';
 import { WellKnownController } from './controllers/well-known.controller';
-import { McpServerFactory } from './server/mcp-server.factory';
 
-/**
- * The MCP server: AI agents (Claude, ChatGPT, Cursor, custom ones) read and
- * plan the training of the user who connected them, through OAuth or a
- * personal token.
- */
+/** OAuth stays mounted for the separate activity file import resource. */
 @Module({
   imports: [AuthModule, CoreModule, OAuthTokensModule],
   controllers: [
-    // Before McpController: /mcp/connections must not reach its catch-all
-    McpConnectionsController,
-    McpController,
+    ActivityImportConnectionsController,
     OAuthController,
     WellKnownController,
   ],
-  providers: [OAuthClientsService, OAuthService, McpServerFactory],
+  providers: [
+    OAuthClientsService,
+    OAuthService,
+    { provide: MCP_FEATURES_ENABLED, useValue: false },
+  ],
 })
 export class McpModule {}

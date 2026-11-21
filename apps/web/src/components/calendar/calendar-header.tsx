@@ -19,7 +19,6 @@ import { useState } from 'react';
 
 import { EVENT_TYPE, Event, SPORT_TYPE } from '@openathlete/shared';
 
-import { AiSetupDialog } from '../ai-settings';
 import { SportSelect } from '../sport-select/sport-select';
 import { Button } from '../ui/button';
 import {
@@ -75,7 +74,6 @@ export function CalendarHeader({ planningDate, onPlanningDateChange }: P) {
   } = useCalendarContext();
   const isWeek = view === 'week';
   const isSeason = view === 'season';
-  const [aiSetupOpen, setAiSetupOpen] = useState(false);
   const [sportFilter, setSportFilter] = useState<SPORT_TYPE | null>(null);
   const { athlete, isCurrentUser } = useAthleteInfo({ athleteId });
   const { open, setOpen, mainSidebarWasOpen, setMainSidebarWasOpen } =
@@ -292,11 +290,7 @@ export function CalendarHeader({ planningDate, onPlanningDateChange }: P) {
                 })}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <CalendarDayActions
-                day={planningDay}
-                menu="dropdown"
-                onAiSetupNeeded={() => setAiSetupOpen(true)}
-              />
+              <CalendarDayActions day={planningDay} menu="dropdown" />
             </DropdownMenuContent>
           </DropdownMenu>
         )}
@@ -328,11 +322,6 @@ export function CalendarHeader({ planningDate, onPlanningDateChange }: P) {
         </Button>
         <CalendarDisplaySettings />
       </div>
-      <AiSetupDialog
-        open={aiSetupOpen}
-        onOpenChange={setAiSetupOpen}
-        analyticsSource="calendar_header"
-      />
     </div>
   );
 }

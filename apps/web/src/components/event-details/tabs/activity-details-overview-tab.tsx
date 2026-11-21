@@ -5,7 +5,6 @@ import { useMemo, useState } from 'react';
 import { ActivityEvent, ActivityStream } from '@openathlete/shared';
 
 import { ActivityStreamsChart } from '../../activity-analysis/activity-streams-chart';
-import { AiSummaryCard } from '../../activity-analysis/ai-summary-card';
 import { CorrectionsCard } from '../../activity-analysis/corrections-card';
 import { DecouplingCard } from '../../activity-analysis/decoupling-card';
 import { availableLapSources, climbsOf } from '../../activity-analysis/laps';
@@ -26,7 +25,6 @@ import { ZonesCard } from '../../activity-analysis/zones-card';
 import { ActivityRecordsCharts } from '../../records/activity-records-charts';
 import { ChartRecord } from '../../records/record-metrics';
 import { StrengthLogCard } from '../../strength/strength-log-card';
-import { ActivitySupporterNudge } from '../../supporter/activity-supporter-nudge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { ActivityDetailsMap } from '../activity-details-map';
 import { ActivityDetailsSelectionProvider } from '../activity-details-selection-context';
@@ -104,7 +102,6 @@ export function ActivityDetailsOverviewTab({
     <>
       <ActivitySectionNav sections={sections} />
       <PlanBanner event={event} options={lapOptions} />
-      <AiSummaryCard event={event} />
       <SectionAnchor id={id('summary')} />
       <Card className={hasMap ? 'col-span-2 sm:col-span-1' : 'col-span-2'}>
         <CardHeader>
@@ -147,7 +144,6 @@ export function ActivityDetailsOverviewTab({
       {stream && <ZonesCard event={event} stream={stream} />}
       {stream && <DecouplingCard stream={stream} sport={event.sport} />}
       {feedbackCard}
-      <ActivitySupporterNudge event={event} isMyActivity={isMyActivity} />
       {!!event.records?.length && (
         <ActivityRecordsCharts
           records={event.records as ChartRecord[]}

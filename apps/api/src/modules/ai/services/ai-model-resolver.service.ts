@@ -31,6 +31,7 @@ import { AiUsageService } from './ai-usage.service';
 
 export const AI_CREDENTIAL_CIPHER = Symbol('AI_CREDENTIAL_CIPHER');
 export const AI_ENV = Symbol('AI_ENV');
+export const AI_FEATURES_ENABLED = Symbol('AI_FEATURES_ENABLED');
 
 /** How Mastra reaches the model, with the key the call is billed to. */
 export type AiModelConfig =
@@ -87,6 +88,7 @@ export class AiModelResolverService {
     private readonly usage: AiUsageService,
     @Inject(AI_CREDENTIAL_CIPHER) private readonly cipher: AiCredentialCipher,
     @Inject(AI_ENV) private readonly env: Record<string, string | undefined>,
+    @Inject(AI_FEATURES_ENABLED) private readonly featuresEnabled: boolean,
   ) {}
 
   /** For a feature the user triggers. Throws when no model is available. */
@@ -94,6 +96,7 @@ export class AiModelResolverService {
     task: AiFeatureTask,
     userId: number,
   ): Promise<ResolvedAiModel> {
+    if (!this.featuresEnabled) throw new AiNotConfiguredException(task);
     const resolved = await this.tryResolveForUser(task, userId);
     if (resolved) {
       if (!(await this.hasDataSharingConsent(userId))) {
@@ -120,6 +123,7 @@ export class AiModelResolverService {
     task: AiFeatureTask,
     athleteId: number,
   ): Promise<ResolvedAiModel | null> {
+    if (!this.featuresEnabled) return null;
     return this.resolveForAthleteChain(task, athleteId, true);
   }
 
@@ -160,6 +164,7 @@ export class AiModelResolverService {
     task: AiFeatureTask,
     userId: number,
   ): Promise<ResolvedAiModel | null> {
+    if (!this.featuresEnabled) return null;
     const ownKey = await this.resolveOwnKey(task, userId);
     if (ownKey) return ownKey;
     if (!(await this.hasHostedAccess(userId))) return null;

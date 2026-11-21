@@ -250,6 +250,120 @@ describe('WahooProviderService', () => {
     expect(activities[31].sport).toBe('CYCLING');
   });
 
+  it('imports only the requested inclusive history and checkpoints pages after queueing', async () => {
+    const { service, prisma, queue } = buildService();
+    const account = makeAccount({ externalUserId: 'wahoo-user-8' });
+    const makeWorkout = (id: number, starts: string) => ({
+      id,
+      starts,
+      workout_type_id: 0,
+      workout_summary: {},
+    });
+    const firstPage = [
+      ...Array.from({ length: 29 }, (_, index) =>
+        makeWorkout(index + 1, '2026-05-01T12:00:00Z'),
+      ),
+      makeWorkout(30, '2026-01-01T00:00:00Z'),
+    ];
+    jest
+      .spyOn(service, 'makeApiRequest')
+      .mockResolvedValueOnce({ workouts: firstPage, total: 32 })
+      .mockResolvedValueOnce({
+        workouts: [
+          makeWorkout(31, '2026-01-02T00:00:00Z'),
+          makeWorkout(32, '2025-12-31T23:59:59Z'),
+        ],
+        total: 32,
+      });
+    prisma.eventActivity.findMany.mockResolvedValue([
+      { externalId: 'wahoo:8:2' },
+    ]);
+    queue.addActivityImportJobs.mockResolvedValue(undefined);
+    const checkpoint = jest.fn().mockResolvedValue(undefined);
+
+    await expect(
+      service.queueFullImport(
+        account,
+        {
+          startDate: '2026-01-01T00:00:00Z',
+          endDate: '2026-05-01T12:00:00Z',
+          requestedAt: '2026-05-01T12:00:00Z',
+          externalUserId: 'wahoo-user-8',
+        },
+        checkpoint,
+      ),
+    ).resolves.toEqual({ queuedActivities: 30 });
+
+    expect(queue.addActivityImportJobs).toHaveBeenNthCalledWith(
+      1,
+      account,
+      expect.arrayContaining([
+        expect.objectContaining({ externalId: 'wahoo:8:1' }),
+        expect.objectContaining({ externalId: 'wahoo:8:30' }),
+      ]),
+      true,
+    );
+    expect(queue.addActivityImportJobs).toHaveBeenCalledTimes(2);
+    expect(queue.addActivityImportJobs.mock.calls[1][1]).toEqual([
+      expect.objectContaining({ externalId: 'wahoo:8:31' }),
+    ]);
+    expect(checkpoint).toHaveBeenNthCalledWith(1, {
+      nextPage: 2,
+      queuedActivities: 29,
+    });
+    expect(checkpoint).toHaveBeenNthCalledWith(2, {
+      nextPage: 3,
+      queuedActivities: 30,
+    });
+  });
+
+  it('rejects Wahoo history after the account identity changes', async () => {
+    const { service } = buildService();
+    await expect(
+      service.queueFullImport(
+        makeAccount({ externalUserId: 'new-user' }),
+        {
+          startDate: '2026-01-01T00:00:00Z',
+          endDate: '2026-02-01T00:00:00Z',
+          requestedAt: '2026-02-01T00:00:00Z',
+          externalUserId: 'old-user',
+        },
+        jest.fn(),
+      ),
+    ).rejects.toThrow('Wahoo account identity changed');
+  });
+
+  it('imports all available Wahoo history without a minimum date', async () => {
+    const { service, prisma, queue } = buildService();
+    const account = makeAccount({ externalUserId: 'wahoo-user-8' });
+    jest.spyOn(service, 'makeApiRequest').mockResolvedValue({
+      workouts: [
+        {
+          id: 17,
+          starts: '2018-04-23T12:00:00Z',
+          workout_type_id: 0,
+          workout_summary: {},
+        },
+      ],
+      total: 1,
+    });
+    prisma.eventActivity.findMany.mockResolvedValue([]);
+    const history = {
+      endDate: '2026-05-01T12:00:00Z',
+      requestedAt: '2026-05-01T12:00:00Z',
+      externalUserId: 'wahoo-user-8',
+    };
+
+    await expect(
+      service.queueFullImport(account, history, jest.fn()),
+    ).resolves.toEqual({ queuedActivities: 1 });
+    expect(queue.addActivityImportJobs).toHaveBeenCalledWith(
+      account,
+      [expect.objectContaining({ externalId: 'wahoo:8:17' })],
+      true,
+    );
+  });
+
   it('rejects non-Wahoo hosts before downloading activity files', async () => {
     const { service, prisma } = buildService();
     jest.spyOn(service, 'makeApiRequest').mockResolvedValue({

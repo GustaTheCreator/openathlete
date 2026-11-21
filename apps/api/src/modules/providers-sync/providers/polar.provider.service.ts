@@ -500,6 +500,30 @@ export class PolarProviderService
       .slice(0, options?.limit);
   }
 
+  async queueFullImport(
+    account: ProviderAccount,
+    options?: ImportOptions,
+  ): Promise<{ queuedActivities: number }> {
+    const activities = await this.importActivities(account, options);
+    if (activities.length === 0) return { queuedActivities: 0 };
+
+    const known = await this.prisma.eventActivity.findMany({
+      where: {
+        provider: ConnectorProvider.POLAR,
+        externalId: { in: activities.map(({ externalId }) => externalId) },
+      },
+      select: { externalId: true },
+    });
+    const knownIds = new Set(known.map(({ externalId }) => externalId));
+    const missing = activities.filter(
+      ({ externalId }) => !knownIds.has(externalId),
+    );
+    if (missing.length > 0) {
+      await this.queueService.addActivityImportJobs(account, missing, true);
+    }
+    return { queuedActivities: missing.length };
+  }
+
   /** Import a session a webhook announced */
   async processExerciseNotification(
     providerAccountId: number,

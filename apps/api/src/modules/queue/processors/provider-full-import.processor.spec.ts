@@ -17,6 +17,8 @@ jest.mock('../../providers-sync/providers', () => ({
   GarminProviderService: class {},
   StravaProviderService: class {},
   SuuntoProviderService: class {},
+  WahooProviderService: class {},
+  PolarProviderService: class {},
 }));
 
 const activeStrava = {
@@ -36,14 +38,17 @@ function setup(account: object | null = activeStrava) {
   };
   const strava = { queueFullImport: jest.fn() };
   const garmin = { queueFullImport: jest.fn() };
+  const wahoo = { queueFullImport: jest.fn() };
   const processor = new ProviderFullImportProcessor(
     prisma as never,
     strava as never,
     garmin as never,
     { queueFullImport: jest.fn() } as never,
     { queueFullImport: jest.fn() } as never,
+    wahoo as never,
+    { queueFullImport: jest.fn() } as never,
   );
-  return { prisma, strava, garmin, processor };
+  return { prisma, strava, garmin, wahoo, processor };
 }
 
 function job(attemptsMade = 0) {
@@ -51,6 +56,12 @@ function job(attemptsMade = 0) {
     data: { providerAccountId: 7 },
     attemptsMade,
     opts: { attempts: 3 },
+    updateData: jest.fn().mockImplementation(async function (
+      this: { data: ProviderFullImportJobData },
+      data: ProviderFullImportJobData,
+    ) {
+      this.data = data;
+    }),
   } as unknown as Job<ProviderFullImportJobData>;
 }
 
@@ -87,6 +98,95 @@ describe('ProviderFullImportProcessor', () => {
     });
   });
 
+  it('persists Wahoo page progress before completing the bounded import', async () => {
+    const account = {
+      ...activeStrava,
+      provider: ConnectorProvider.WAHOO,
+      externalUserId: 'wahoo-user-8',
+      fullImportRequestedAt: new Date('2026-02-01T00:00:00.000Z'),
+    };
+    const { prisma, wahoo, processor } = setup(account);
+    const history = {
+      startDate: '2026-01-01T00:00:00.000Z',
+      endDate: '2026-02-01T00:00:00.000Z',
+      requestedAt: '2026-02-01T00:00:00.000Z',
+      externalUserId: 'wahoo-user-8',
+    };
+    const historyJob = job();
+    historyJob.data.history = history;
+    wahoo.queueFullImport.mockImplementation(
+      async (_account, _history, checkpoint) => {
+        await checkpoint({ nextPage: 2, queuedActivities: 30 });
+        expect(historyJob.data.history).toMatchObject({
+          nextPage: 2,
+          queuedActivities: 30,
+        });
+        return { queuedActivities: 30 };
+      },
+    );
+
+    await expect(processor.process(historyJob)).resolves.toEqual({
+      queuedActivities: 30,
+    });
+    expect(wahoo.queueFullImport).toHaveBeenCalledWith(
+      account,
+      history,
+      expect.any(Function),
+    );
+    expect(prisma.providerAccount.updateMany).toHaveBeenCalledWith({
+      where: {
+        providerAccountId: 7,
+        status: 'active',
+        importActivitiesEnabled: true,
+        externalUserId: 'wahoo-user-8',
+        fullImportRequestedAt: new Date('2026-02-01T00:00:00.000Z'),
+      },
+      data: { fullImportCompletedAt: expect.any(Date) },
+    });
+  });
+
+  it('resumes from the durable Wahoo page checkpoint after a 429', async () => {
+    const account = {
+      ...activeStrava,
+      provider: ConnectorProvider.WAHOO,
+      externalUserId: 'wahoo-user-8',
+      fullImportRequestedAt: new Date('2026-02-01T00:00:00.000Z'),
+    };
+    const { wahoo, processor } = setup(account);
+    const historyJob = job();
+    historyJob.data.history = {
+      startDate: '2026-01-01T00:00:00.000Z',
+      endDate: '2026-02-01T00:00:00.000Z',
+      requestedAt: '2026-02-01T00:00:00.000Z',
+      externalUserId: 'wahoo-user-8',
+    };
+    const rateLimit = jest.fn();
+    Object.defineProperty(processor, 'worker', { value: { rateLimit } });
+    wahoo.queueFullImport
+      .mockImplementationOnce(async (_account, _history, checkpoint) => {
+        await checkpoint({ nextPage: 2, queuedActivities: 30 });
+        throw new ProviderRateLimitError('Wahoo', 30_000);
+      })
+      .mockImplementationOnce(async (_account, history) => {
+        expect(history).toMatchObject({ nextPage: 2, queuedActivities: 30 });
+        return { queuedActivities: 30 };
+      });
+
+    await expect(processor.process(historyJob)).rejects.toMatchObject({
+      message: 'bullmq:rateLimitExceeded',
+    });
+    expect(rateLimit).toHaveBeenCalledWith(30_000);
+    expect(historyJob.data.history).toMatchObject({
+      nextPage: 2,
+      queuedActivities: 30,
+    });
+
+    await expect(processor.process(historyJob)).resolves.toEqual({
+      queuedActivities: 30,
+    });
+    expect(wahoo.queueFullImport).toHaveBeenCalledTimes(2);
+  });
+
   it('leaves a Garmin backfill open until its webhooks arrive', async () => {
     const { prisma, garmin, processor } = setup({
       ...activeStrava,
@@ -103,6 +203,42 @@ describe('ProviderFullImportProcessor', () => {
       where: { providerAccountId: 7 },
       data: { fullImportCompletedAt: null },
     });
+  });
+
+  it('allows the next selected period after Garmin accepts the backfill', async () => {
+    const requestedAt = '2026-02-01T09:00:00.000Z';
+    const account = {
+      ...activeStrava,
+      provider: ConnectorProvider.GARMIN,
+      externalUserId: 'garmin-user',
+      fullImportRequestedAt: new Date(requestedAt),
+    };
+    const { prisma, garmin, processor } = setup(account);
+    const historyJob = job();
+    const startDate = '2026-01-05T00:00:00.000Z';
+    const endDate = '2026-01-12T23:59:59.999Z';
+    historyJob.data.history = {
+      startDate,
+      endDate,
+      requestedAt,
+      externalUserId: account.externalUserId,
+    };
+    garmin.queueFullImport.mockResolvedValue({
+      queuedActivities: 0,
+      backfillRequested: true,
+    });
+
+    await processor.process(historyJob);
+
+    expect(garmin.queueFullImport).toHaveBeenCalledWith(account, {
+      startDate: new Date(startDate),
+      endDate: new Date(endDate),
+    });
+    expect(prisma.providerAccount.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { fullImportCompletedAt: expect.any(Date) },
+      }),
+    );
   });
 
   it('skips and clears the request when import was turned off', async () => {

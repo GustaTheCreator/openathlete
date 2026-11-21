@@ -5,7 +5,6 @@ import { AuthModule } from '../auth';
 import { CoreModule } from '../core/core.module';
 import { SubscriptionModule } from '../subscription';
 import { WebSocketModule } from '../websocket/websocket.module';
-import { AIFeaturesController } from './controllers/ai-features.controller';
 import { EventGenerationService } from './services/event-generation.service';
 import { EventModificationService } from './services/event-modification.service';
 
@@ -17,7 +16,7 @@ import { EventModificationService } from './services/event-modification.service'
     SubscriptionModule,
     WebSocketModule,
   ],
-  controllers: [AIFeaturesController],
+  controllers: [],
   providers: [EventGenerationService, EventModificationService],
 })
 export class AgentModule {}
