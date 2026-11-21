@@ -271,11 +271,7 @@ export function CalendarDay({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-64">
-                  <CalendarDayActions
-                    day={day}
-                    menu="dropdown"
-                    onAiSetupNeeded={() => setAiSetupOpen(true)}
-                  />
+                  <CalendarDayActions day={day} menu="dropdown" />
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
