@@ -19,9 +19,9 @@ test('AI settings and calendar actions are unavailable', async ({
   await expect(
     page.getByRole('heading', { name: 'Connectors', exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole('link', { name: 'AI', exact: true }),
-  ).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'AI', exact: true })).toHaveCount(
+    0,
+  );
   await expect(page.locator('[data-ai-data-sharing]')).toHaveCount(0);
 
   await page.goto('/dashboard/calendar');
