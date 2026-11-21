@@ -19,8 +19,8 @@ const COMMANDS = {
 const configuredClients = new WeakSet<object>();
 
 @Injectable()
-export class ProviderExportLockService {
-  private readonly logger = new Logger(ProviderExportLockService.name);
+export class ProviderSyncLockService {
+  private readonly logger = new Logger(ProviderSyncLockService.name);
 
   constructor(@InjectQueue('activity-import') private readonly queue: Queue) {}
 
@@ -28,10 +28,24 @@ export class ProviderExportLockService {
     workoutId: number,
     work: (assertHeld: () => Promise<void>) => Promise<T>,
   ): Promise<T> {
+    return this.withLease(`provider-workout-export-lock:${workoutId}`, work);
+  }
+
+  async withActivityImportLock<T>(
+    athleteId: number,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    return this.withLease(`provider-activity-import-lock:${athleteId}`, work);
+  }
+
+  private async withLease<T>(
+    scope: string,
+    work: (assertHeld: () => Promise<void>) => Promise<T>,
+  ): Promise<T> {
     const redis = await this.queue.client;
     if (!configuredClients.has(redis)) {
       for (const [name, lua] of Object.entries(COMMANDS)) {
-        redis.defineCommand(`providerExportLock${name}`, {
+        redis.defineCommand(`providerSyncLock${name}`, {
           numberOfKeys: 1,
           lua,
         });
@@ -39,12 +53,12 @@ export class ProviderExportLockService {
       configuredClients.add(redis);
     }
 
-    const key = `openathlete:provider-workout-export-lock:${workoutId}`;
+    const key = `openathlete:${scope}`;
     const owner = randomUUID();
     const deadline = Date.now() + WAIT_MS;
     while (true) {
       if (
-        (await redis.runCommand('providerExportLockacquire', [
+        (await redis.runCommand('providerSyncLockacquire', [
           key,
           owner,
           LEASE_MS,
@@ -53,9 +67,7 @@ export class ProviderExportLockService {
         break;
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
-        throw new Error(
-          `Timed out waiting for workout export lock ${workoutId}`,
-        );
+        throw new Error(`Timed out waiting for lock ${scope}`);
       }
       await new Promise((resolve) =>
         setTimeout(resolve, Math.min(POLL_MS, remaining)),
@@ -67,9 +79,9 @@ export class ProviderExportLockService {
     const assertHeld = async () => {
       if (leaseFailure) throw leaseFailure;
       if (
-        (await redis.runCommand('providerExportLockassert', [key, owner])) !== 1
+        (await redis.runCommand('providerSyncLockassert', [key, owner])) !== 1
       ) {
-        leaseFailure = new Error(`Lost workout export lock ${workoutId}`);
+        leaseFailure = new Error(`Lost lock ${scope}`);
         throw leaseFailure;
       }
     };
@@ -77,13 +89,13 @@ export class ProviderExportLockService {
       renewal = renewal
         .then(async () => {
           if (leaseFailure) return;
-          const renewed = await redis.runCommand('providerExportLockrenew', [
+          const renewed = await redis.runCommand('providerSyncLockrenew', [
             key,
             owner,
             LEASE_MS,
           ]);
           if (renewed !== 1) {
-            throw new Error(`Lost workout export lock ${workoutId}`);
+            throw new Error(`Lost lock ${scope}`);
           }
         })
         .catch((error: unknown) => {
@@ -101,10 +113,10 @@ export class ProviderExportLockService {
       clearInterval(timer);
       await renewal;
       try {
-        await redis.runCommand('providerExportLockrelease', [key, owner]);
+        await redis.runCommand('providerSyncLockrelease', [key, owner]);
       } catch (error) {
         this.logger.warn(
-          `Failed to release workout export lock ${workoutId}: ${error instanceof Error ? error.message : String(error)}`,
+          `Failed to release lock ${scope}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }

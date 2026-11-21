@@ -126,20 +126,30 @@ test('an app sends activity files with an OAuth token for the import API', async
     },
     data: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
   });
-  expect(mcp.status()).toBe(401);
+  expect(mcp.status()).toBe(404);
   const calendar = await request.get(`${API_URL}/event`, {
     headers: apiHeaders(undefined, tokens.access_token),
   });
   expect(calendar.status()).toBe(401);
-});
 
-test('an AI agent token cannot import activities', async ({ request }) => {
-  const athlete = await createAthlete(request);
-  const tokens = await connect(request, athlete, MCP_URL, 'read write');
-
-  const refused = await upload(request, tokens.access_token);
-  expect(refused.status()).toBe(401);
-  expect(refused.headers()['www-authenticate']).toContain(
-    'error="invalid_token"',
+  const headers = apiHeaders(undefined, athlete.accessToken);
+  const connections = await request.get(
+    `${API_URL}/activity-import/connections`,
+    { headers },
   );
+  expect(connections.status()).toBe(200);
+  const [connection] = await connections.json();
+  expect(connection).toMatchObject({
+    name: 'Endurain',
+    scopes: ['activities:import'],
+  });
+  expect(
+    (
+      await request.delete(
+        `${API_URL}/activity-import/connections/${connection.mcpGrantId}`,
+        { headers },
+      )
+    ).status(),
+  ).toBe(204);
+  expect((await upload(request, tokens.access_token)).status()).toBe(401);
 });

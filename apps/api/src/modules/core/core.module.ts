@@ -8,7 +8,6 @@ import { ProvidersSyncModule } from '../providers-sync/providers-sync.module';
 import { QueueCoreModule } from '../queue/queue-core.module';
 import { EventController } from './controllers';
 import { ActivityDuplicatesController } from './controllers/activity-duplicates.controller';
-import { ActivityFeedbackController } from './controllers/activity-feedback.controller';
 import { AthleteController } from './controllers/athlete.controller';
 import { CoachNoteController } from './controllers/coach-note.controller';
 import { CoachController } from './controllers/coach.controller';
@@ -81,7 +80,6 @@ import { WeatherService } from './services/weather/weather.service';
   controllers: [
     ExerciseController,
     ActivityDuplicatesController,
-    ActivityFeedbackController,
     EventController,
     EventTemplateController,
     EventTemplateFolderController,

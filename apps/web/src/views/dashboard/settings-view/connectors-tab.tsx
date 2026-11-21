@@ -22,6 +22,13 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useUserRoles } from '@/contexts/auth';
 import { m } from '@/paraglide/messages';
@@ -39,11 +46,13 @@ import { toast } from 'sonner';
 
 import {
   ConnectorProvider,
+  ProviderHistoryPeriod,
   ProviderPreferencesDto,
   getProviderSyncCapabilities,
   isFullImportInProgress,
 } from '@openathlete/shared';
 
+import { ActivityImportConnectionsSection } from './activity-import-connections-section';
 import { CalendarFeedSection } from './calendar-feed-section';
 import { DuplicateActivitiesSection } from './duplicate-activities-section';
 import { GarminPersonalSection } from './garmin-personal-section';
@@ -64,6 +73,10 @@ const SUPPORTED_PROVIDERS: ConnectorProvider[] = [
   'WAHOO',
 ];
 
+function formatInputDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
 export function ConnectorsTab() {
   const posthog = usePostHog();
   const [corosRegionOpen, setCorosRegionOpen] = useState(false);
@@ -78,6 +91,17 @@ export function ConnectorsTab() {
   const roles = useUserRoles();
   const [importingProvider, setImportingProvider] =
     useState<ConnectorProvider | null>(null);
+  const [historyPeriod, setHistoryPeriod] = useState<
+    ProviderHistoryPeriod | 'custom'
+  >('1m');
+  const [historyStartDate, setHistoryStartDate] = useState(() => {
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() - 30);
+    return formatInputDate(date);
+  });
+  const [historyEndDate, setHistoryEndDate] = useState(() =>
+    formatInputDate(new Date()),
+  );
 
   const { data: connectedProviders = [], isLoading: isLoadingAccounts } =
     useGetConnectedProvidersQuery();
@@ -162,18 +186,20 @@ export function ConnectorsTab() {
   });
 
   const importAllActivitiesMutation = useImportAllActivitiesMutation({
-    onMutate: (provider) => {
+    onMutate: ({ provider }) => {
       setImportingProvider(provider);
     },
-    onSuccess: (_, provider) => {
+    onSuccess: (result, { provider }) => {
       posthog?.capture('provider_full_import_requested', { provider });
       toast.success(
-        m.full_import_started({
-          provider: connectorProviderLabelMap[provider],
-        }),
+        result.queued
+          ? m.full_import_started({
+              provider: connectorProviderLabelMap[provider],
+            })
+          : m.full_import_completed(),
       );
     },
-    onError: (error, provider) => {
+    onError: (error, { provider }) => {
       toast.error(
         error.message ||
           m.full_import_failed({
@@ -414,31 +440,149 @@ export function ConnectorsTab() {
                           })}
                           {provider === 'GARMIN' &&
                             ` ${m.full_import_garmin_hint()}`}
-                          {fullImportCompleted
-                            ? ` ${m.full_import_completed()}`
-                            : !providerDetails.importActivitiesEnabled &&
-                              ` ${m.full_import_disabled()}`}
+                          {provider === 'POLAR' &&
+                            ` ${m.full_import_polar_hint()}`}
+                          {fullImportCompleted &&
+                            ` ${m.full_import_completed()}`}
+                          {!providerDetails.importActivitiesEnabled &&
+                            ` ${m.full_import_disabled()}`}
                         </>
                       }
                     >
-                      {!fullImportCompleted && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={
-                            fullImportInProgress ||
-                            isImportingThisProvider ||
-                            !providerDetails.importActivitiesEnabled
-                          }
-                          onClick={() =>
-                            importAllActivitiesMutation.mutate(provider)
-                          }
-                        >
-                          {fullImportInProgress || isImportingThisProvider
-                            ? m.full_import_in_progress()
-                            : m.full_import_cta()}
-                        </Button>
-                      )}
+                      <div className="flex w-full flex-col gap-2 sm:w-auto">
+                        <div className="w-full sm:w-48">
+                          <Label
+                            className="sr-only"
+                            htmlFor="provider-history-period"
+                          >
+                            {m.provider_history_period_label()}
+                          </Label>
+                          <Select
+                            value={historyPeriod}
+                            onValueChange={(value) =>
+                              setHistoryPeriod(
+                                value as ProviderHistoryPeriod | 'custom',
+                              )
+                            }
+                            disabled={
+                              fullImportInProgress || isImportingThisProvider
+                            }
+                          >
+                            <SelectTrigger
+                              id="provider-history-period"
+                              className="w-full"
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="1w">
+                                {m.provider_history_period_1w()}
+                              </SelectItem>
+                              <SelectItem value="1m">
+                                {m.provider_history_period_1m()}
+                              </SelectItem>
+                              <SelectItem value="2m">
+                                {m.provider_history_period_2m()}
+                              </SelectItem>
+                              <SelectItem value="6m">
+                                {m.provider_history_period_6m()}
+                              </SelectItem>
+                              <SelectItem value="1y">
+                                {m.provider_history_period_1y()}
+                              </SelectItem>
+                              <SelectItem value="custom">
+                                {m.history_period_custom()}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {historyPeriod === 'custom' && (
+                          <div className="grid w-full gap-2 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <Label htmlFor={`${provider}-history-start`}>
+                                {m.history_custom_start()}
+                              </Label>
+                              <input
+                                id={`${provider}-history-start`}
+                                type="date"
+                                className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+                                value={historyStartDate}
+                                max={historyEndDate}
+                                onChange={(event) =>
+                                  setHistoryStartDate(event.target.value)
+                                }
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <Label htmlFor={`${provider}-history-end`}>
+                                {m.history_custom_end()}
+                              </Label>
+                              <input
+                                id={`${provider}-history-end`}
+                                type="date"
+                                className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+                                value={historyEndDate}
+                                min={historyStartDate}
+                                max={formatInputDate(new Date())}
+                                onChange={(event) =>
+                                  setHistoryEndDate(event.target.value)
+                                }
+                              />
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex w-full flex-col gap-2 sm:flex-row">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="min-h-11"
+                            disabled={
+                              fullImportInProgress ||
+                              isImportingThisProvider ||
+                              !providerDetails.importActivitiesEnabled ||
+                              (historyPeriod === 'custom' &&
+                                (!historyStartDate ||
+                                  !historyEndDate ||
+                                  historyStartDate > historyEndDate))
+                            }
+                            onClick={() =>
+                              importAllActivitiesMutation.mutate({
+                                provider,
+                                request:
+                                  historyPeriod === 'custom'
+                                    ? {
+                                        period: 'custom',
+                                        startDate: historyStartDate,
+                                        endDate: historyEndDate,
+                                      }
+                                    : { period: historyPeriod },
+                              })
+                            }
+                          >
+                            {fullImportInProgress || isImportingThisProvider
+                              ? m.full_import_in_progress()
+                              : m.provider_history_import_cta()}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="min-h-11"
+                            disabled={
+                              fullImportInProgress ||
+                              isImportingThisProvider ||
+                              !providerDetails.importActivitiesEnabled
+                            }
+                            onClick={() =>
+                              importAllActivitiesMutation.mutate({
+                                provider,
+                                request: { period: 'all' },
+                              })
+                            }
+                          >
+                            {m.full_import_cta()}
+                          </Button>
+                        </div>
+                      </div>
                     </SettingsRow>
                   )}
                   <SettingsRow
@@ -475,6 +619,8 @@ export function ConnectorsTab() {
       )}
 
       {roles?.includes('ATHLETE') && <DuplicateActivitiesSection />}
+
+      {roles?.includes('ATHLETE') && <ActivityImportConnectionsSection />}
 
       {roles?.includes('ATHLETE') && <CalendarFeedSection />}
 

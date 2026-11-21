@@ -67,6 +67,7 @@ import {
   isRefreshTokenRejected,
 } from '../base';
 import {
+  ImportOptions,
   ImportResult,
   ImportedActivity,
   ProviderImportCapability,
@@ -641,7 +642,10 @@ export class GarminProviderService
    * the usual pings. Garmin serves the last 31 days only; older activities
    * come from the user's Garmin data export, imported as files.
    */
-  async queueFullImport(account: ProviderAccount): Promise<FullImportResult> {
+  async queueFullImport(
+    account: ProviderAccount,
+    options?: ImportOptions,
+  ): Promise<FullImportResult> {
     const permissions = await this.getAccountPermissions(account);
     if (permissions.length > 0 && !permissions.includes('ACTIVITY_EXPORT')) {
       throw new BadRequestException(
@@ -649,8 +653,19 @@ export class GarminProviderService
       );
     }
 
-    const end = Math.floor(Date.now() / 1000);
-    const start = end - BACKFILL_WINDOW_SECONDS;
+    const now = Math.floor(Date.now() / 1000);
+    const end = Math.min(
+      Math.floor((options?.endDate?.getTime() ?? now * 1000) / 1000),
+      now,
+    );
+    const oldestAvailable = now - BACKFILL_WINDOW_SECONDS;
+    const start = Math.max(
+      Math.floor(
+        (options?.startDate?.getTime() ?? oldestAvailable * 1000) / 1000,
+      ),
+      oldestAvailable,
+    );
+    if (start >= end) return { queuedActivities: 0 };
     const accessToken = await this.getValidAccessToken(account);
     await this.requestActivitiesBackfill(accessToken, start, end);
     return { queuedActivities: 0, backfillRequested: true };

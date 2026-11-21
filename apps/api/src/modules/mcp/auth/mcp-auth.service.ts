@@ -57,6 +57,15 @@ function toConnection(
   };
 }
 
+function toActivityImportConnection(
+  grant: McpGrant & { client: Pick<OAuthClient, 'clientUri'> | null },
+): McpConnection {
+  return {
+    ...toConnection(grant),
+    scopes: scopesFor(grant.scopes, 'ACTIVITY_IMPORT'),
+  };
+}
+
 /**
  * Turns the bearer token of an MCP request into the user it acts for, and
  * manages the accesses a user gave: personal tokens and OAuth clients.
@@ -133,6 +142,17 @@ export class McpAuthService {
     return grants.map(toConnection);
   }
 
+  async listActivityImportConnections(
+    user: AuthUser,
+  ): Promise<McpConnection[]> {
+    const grants = await this.prisma.mcpGrant.findMany({
+      where: { userId: user.userId, scopes: { has: 'activities:import' } },
+      include: { client: { select: { clientUri: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    return grants.map(toActivityImportConnection);
+  }
+
   async createPersonalToken(
     user: AuthUser,
     dto: CreatePersonalTokenDto,
@@ -177,5 +197,19 @@ export class McpAuthService {
     if (!count) {
       throw new NotFoundException('Connection not found');
     }
+  }
+
+  async revokeActivityImportConnection(
+    user: AuthUser,
+    mcpGrantId: number,
+  ): Promise<void> {
+    const { count } = await this.prisma.mcpGrant.deleteMany({
+      where: {
+        mcpGrantId,
+        userId: user.userId,
+        scopes: { has: 'activities:import' },
+      },
+    });
+    if (!count) throw new NotFoundException('Connection not found');
   }
 }

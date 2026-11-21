@@ -1,3 +1,5 @@
+import { providerFullImportRequestSchema } from '@openathlete/shared';
+
 import { ProviderOAuthController } from './provider-oauth.controller';
 
 jest.mock('src/modules/auth', () => ({
@@ -26,6 +28,7 @@ function setup(configured = true) {
   const queue = {
     rememberWahooOAuth: jest.fn(),
     consumeWahooOAuth: jest.fn().mockResolvedValue(true),
+    addFullImportJob: jest.fn().mockResolvedValue(true),
   };
   const emitter = { emit: jest.fn() };
   const garmin = {
@@ -56,7 +59,10 @@ function setup(configured = true) {
   };
   const prisma = {
     athlete: { findUnique: jest.fn().mockResolvedValue({ athleteId: 42 }) },
-    providerAccount: { findFirst: jest.fn().mockResolvedValue(null) },
+    providerAccount: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
   };
   const config = {
     get: (key: string) =>
@@ -208,5 +214,145 @@ describe('Wahoo OAuth controller', () => {
       where: { athleteId: 42, provider: 'WAHOO', status: 'active' },
     });
     expect(wahoo.disconnect).not.toHaveBeenCalled();
+  });
+});
+
+describe('Provider history request', () => {
+  const now = '2024-03-31T10:00:00.000Z';
+  const user = { userId: 7 } as never;
+  const account = {
+    providerAccountId: 9,
+    externalUserId: 'remote-123',
+    importActivitiesEnabled: true,
+    fullImportRequestedAt: new Date('2024-01-01T00:00:00Z'),
+    fullImportCompletedAt: new Date('2024-01-01T00:01:00Z'),
+  };
+
+  beforeEach(() => jest.useFakeTimers({ now: new Date(now) }));
+  afterEach(() => jest.useRealTimers());
+
+  it.each([
+    ['1w', '2024-03-24'],
+    ['1m', '2024-02-29'],
+    ['2m', '2024-01-31'],
+    ['6m', '2023-09-30'],
+    ['1y', '2023-03-31'],
+  ] as const)(
+    'queues the selected %s after a previous import',
+    async (period, day) => {
+      const { controller, prisma, queue } = setup();
+      prisma.providerAccount.findFirst.mockResolvedValue(account);
+
+      await expect(
+        controller.importAllActivities(user, 'wahoo', { period }),
+      ).resolves.toEqual({ success: true, queued: true });
+
+      expect(queue.addFullImportJob).toHaveBeenCalledWith(9, {
+        startDate: `${day}T10:00:00.000Z`,
+        endDate: now,
+        requestedAt: now,
+        externalUserId: 'remote-123',
+      });
+    },
+  );
+
+  it('leaves the legacy bodyless request idempotent', async () => {
+    const { controller, prisma, queue } = setup();
+    prisma.providerAccount.findFirst.mockResolvedValue(account);
+
+    expect(providerFullImportRequestSchema.parse(undefined)).toEqual({});
+    await expect(
+      controller.importAllActivities(user, 'garmin'),
+    ).resolves.toEqual({
+      success: true,
+      message: 'Full import already completed',
+    });
+    expect(queue.addFullImportJob).not.toHaveBeenCalled();
+  });
+
+  it.each(['garmin', 'polar', 'strava', 'suunto', 'coros', 'wahoo'])(
+    'passes an inclusive custom UTC range to %s independently of the request time',
+    async (provider) => {
+      const { controller, prisma, queue } = setup();
+      prisma.providerAccount.findFirst.mockResolvedValue(account);
+      await controller.importAllActivities(user, provider, {
+        period: 'custom',
+        startDate: '2024-03-10',
+        endDate: '2024-03-10',
+      });
+      expect(queue.addFullImportJob).toHaveBeenCalledWith(9, {
+        startDate: '2024-03-10T00:00:00.000Z',
+        endDate: '2024-03-10T23:59:59.999Z',
+        requestedAt: now,
+        externalUserId: 'remote-123',
+      });
+    },
+  );
+
+  it('queues all available history without a minimum start date', async () => {
+    const { controller, prisma, queue } = setup();
+    prisma.providerAccount.findFirst.mockResolvedValue(account);
+    await controller.importAllActivities(user, 'wahoo', { period: 'all' });
+    expect(queue.addFullImportJob).toHaveBeenCalledWith(9, {
+      endDate: now,
+      requestedAt: now,
+      externalUserId: 'remote-123',
+    });
+  });
+
+  it.each([
+    ['2024-03-10', '2024-03-09'],
+    ['2024-02-30', '2024-03-01'],
+    ['2024-03-10T00:00:00Z', '2024-03-10'],
+  ])('rejects invalid custom dates %s to %s', (startDate, endDate) => {
+    expect(
+      providerFullImportRequestSchema.safeParse({
+        period: 'custom',
+        startDate,
+        endDate,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a future custom range before claiming the account', async () => {
+    const { controller, prisma, queue } = setup();
+    prisma.providerAccount.findFirst.mockResolvedValue(account);
+    await expect(
+      controller.importAllActivities(user, 'wahoo', {
+        period: 'custom',
+        startDate: '2024-03-30',
+        endDate: '2024-04-01',
+      }),
+    ).rejects.toThrow('must not be in the future');
+    expect(queue.addFullImportJob).not.toHaveBeenCalled();
+  });
+
+  it('keeps the existing request when another import is already present in the queue', async () => {
+    const { controller, prisma, queue } = setup();
+    prisma.providerAccount.findFirst.mockResolvedValue(account);
+    queue.addFullImportJob.mockResolvedValue(false);
+
+    await expect(
+      controller.importAllActivities(user, 'wahoo', { period: '1m' }),
+    ).rejects.toThrow('A historical import is already queued');
+
+    expect(prisma.providerAccount.updateMany).toHaveBeenLastCalledWith({
+      where: { providerAccountId: 9, fullImportRequestedAt: new Date(now) },
+      data: {
+        fullImportRequestedAt: account.fullImportRequestedAt,
+        fullImportCompletedAt: account.fullImportCompletedAt,
+      },
+    });
+  });
+
+  it('rejects a competing request before adding a second job', async () => {
+    const { controller, prisma, queue } = setup();
+    prisma.providerAccount.findFirst.mockResolvedValue(account);
+    prisma.providerAccount.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      controller.importAllActivities(user, 'wahoo', { period: '2m' }),
+    ).rejects.toThrow('Historical import state has changed');
+    expect(queue.addFullImportJob).not.toHaveBeenCalled();
   });
 });

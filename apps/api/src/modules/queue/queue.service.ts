@@ -12,10 +12,19 @@ export interface ActivityImportJobData {
   providerAccountId: number;
   activity: ImportedActivity;
   bulkImport?: boolean;
+  providerExternalUserId?: string | null;
 }
 
 export interface ProviderFullImportJobData {
   providerAccountId: number;
+  history?: {
+    startDate?: string;
+    endDate: string;
+    requestedAt: string;
+    externalUserId: string | null;
+    nextPage?: number;
+    queuedActivities?: number;
+  };
 }
 
 /** One entry of a Garmin ping or push notification */
@@ -52,6 +61,7 @@ export type CorosSyncJobData =
       kind: 'history-batch';
       providerAccountId: number;
       activities: ImportedActivity[];
+      externalUserId?: string | null;
     };
 
 const POLAR_WEBHOOK_SECRET_KEY = 'openathlete:polar:webhook-secret';
@@ -187,10 +197,11 @@ export class QueueService {
     providerAccountId: number,
     activities: ImportedActivity[],
     delayMs: number,
+    externalUserId: string | null,
   ): Promise<void> {
     await this.corosSyncQueue.add(
       'history-batch',
-      { kind: 'history-batch', providerAccountId, activities },
+      { kind: 'history-batch', providerAccountId, activities, externalUserId },
       { delay: delayMs },
     );
   }
@@ -313,7 +324,10 @@ export class QueueService {
    * activities takes minutes and many rate-limited provider calls, so it runs
    * in the worker rather than in the HTTP request.
    */
-  async addFullImportJob(providerAccountId: number): Promise<void> {
+  async addFullImportJob(
+    providerAccountId: number,
+    history?: ProviderFullImportJobData['history'],
+  ): Promise<boolean> {
     const jobId = `full-import-${providerAccountId}`;
     // A finished job keeps its id until it expires: remove it so a new
     // import can be queued (an active one is left alone)
@@ -321,15 +335,16 @@ export class QueueService {
     if (existing) {
       const state = await existing.getState();
       if (state !== 'completed' && state !== 'failed') {
-        return;
+        return false;
       }
       await existing.remove();
     }
     await this.fullImportQueue.add(
       'full-import',
-      { providerAccountId },
+      { providerAccountId, ...(history && { history }) },
       { jobId },
     );
+    return true;
   }
 
   /**
@@ -382,6 +397,7 @@ export class QueueService {
         providerAccountId: account.providerAccountId,
         activity,
         bulkImport,
+        providerExternalUserId: account.externalUserId,
       },
       opts: {
         priority: this.calculatePriority(activity.startDate),

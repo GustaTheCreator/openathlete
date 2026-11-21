@@ -1,8 +1,9 @@
-import { Job } from 'bullmq';
+import { DelayedError, Job } from 'bullmq';
 
 import { ConnectorProvider } from '@openathlete/database';
 
 import { CoachActivityNoticeEvent } from '../../../events/coach-activity-notice.event';
+import { ProviderRateLimitError } from '../../providers-sync/errors/provider-rate-limit.error';
 import { ActivityImportJobData } from '../queue.service';
 import { ActivityImportProcessor } from './activity-import.processor';
 
@@ -49,6 +50,7 @@ function setup(
         provider,
         status: 'active',
         importActivitiesEnabled: true,
+        externalUserId: 'wahoo-user-8',
       }),
     },
     eventActivity: {
@@ -63,6 +65,7 @@ function setup(
   const strava = {
     importActivity: jest.fn().mockResolvedValue({ activity: saved, created }),
   };
+  const wahoo = { importActivity: jest.fn() };
   const queue = { addActivityProcessingJob: jest.fn() };
   const emitter = { emit: jest.fn() };
   const descriptions = { schedule: jest.fn().mockResolvedValue(true) };
@@ -73,17 +76,23 @@ function setup(
     {} as never,
     {} as never,
     {} as never,
-    {} as never,
+    wahoo as never,
     queue as never,
     duplicates as never,
+    {
+      withActivityImportLock: async (
+        _athleteId: number,
+        work: () => Promise<unknown>,
+      ) => work(),
+    } as never,
     emitter as never,
     undefined,
     descriptions as never,
   );
-  return { processor, emitter, queue, strava, duplicates, descriptions };
+  return { processor, emitter, queue, strava, wahoo, duplicates, descriptions };
 }
 
-const job = (bulkImport = false) =>
+const job = (bulkImport = false, providerExternalUserId?: string | null) =>
   ({
     data: {
       providerAccountId: 7,
@@ -94,8 +103,10 @@ const job = (bulkImport = false) =>
         duration: 3600,
       },
       bulkImport,
+      ...(providerExternalUserId !== undefined && { providerExternalUserId }),
     },
     updateProgress: jest.fn(),
+    moveToDelayed: jest.fn(),
   }) as unknown as Job<ActivityImportJobData>;
 
 describe('ActivityImportProcessor', () => {
@@ -188,5 +199,43 @@ describe('ActivityImportProcessor', () => {
     await processor.process(job());
     expect(duplicates.findDuplicate).not.toHaveBeenCalled();
     expect(strava.importActivity).toHaveBeenCalled();
+  });
+
+  it('delays a Wahoo detail 429 until its reset time without consuming an attempt', async () => {
+    const { processor, wahoo, queue } = setup(true, {
+      provider: ConnectorProvider.WAHOO,
+    });
+    wahoo.importActivity.mockRejectedValue(
+      new ProviderRateLimitError('Wahoo', 45_000),
+    );
+    const activityJob = job(true, 'wahoo-user-8');
+    const token = 'lock-token';
+
+    await expect(processor.process(activityJob, token)).rejects.toBeInstanceOf(
+      DelayedError,
+    );
+
+    expect(activityJob.moveToDelayed).toHaveBeenCalledWith(
+      expect.any(Number),
+      token,
+    );
+    const delayUntil = (activityJob.moveToDelayed as jest.Mock).mock
+      .calls[0][0];
+    expect(delayUntil).toBeGreaterThanOrEqual(Date.now() + 44_000);
+    expect(delayUntil).toBeLessThanOrEqual(Date.now() + 45_000);
+    expect(queue.addActivityProcessingJob).not.toHaveBeenCalled();
+  });
+
+  it('skips queued Wahoo history when the account has been reconnected', async () => {
+    const { processor, wahoo } = setup(true, {
+      provider: ConnectorProvider.WAHOO,
+    });
+    const activityJob = job(true, 'old-wahoo-user');
+
+    await expect(processor.process(activityJob)).resolves.toEqual({
+      success: true,
+      skipped: 'provider-account-changed',
+    });
+    expect(wahoo.importActivity).not.toHaveBeenCalled();
   });
 });

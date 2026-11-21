@@ -4,12 +4,12 @@ import { ConfigService } from '@nestjs/config';
 import type { ApiEnvSchemaType } from '@openathlete/shared';
 
 import { SubscriptionModule } from '../subscription/subscription.module';
-import { AiSettingsController } from './controllers/ai-settings.controller';
 import { mastraModelRegistry } from './model-registry';
 import { AiCredentialCipher } from './services/ai-credential-cipher';
 import {
   AI_CREDENTIAL_CIPHER,
   AI_ENV,
+  AI_FEATURES_ENABLED,
   AiModelResolverService,
 } from './services/ai-model-resolver.service';
 import { AiPolicyService } from './services/ai-policy.service';
@@ -23,11 +23,13 @@ import { AiService } from './services/ai.service';
 
 @Module({
   imports: [forwardRef(() => SubscriptionModule)],
-  controllers: [AiSettingsController],
+  // AI settings are temporarily unavailable in the product.
+  controllers: [],
   providers: [
     AiPolicyService,
     AiProviderCatalogService,
     AiModelResolverService,
+    { provide: AI_FEATURES_ENABLED, useValue: false },
     AiService,
     AiSettingsService,
     AiUsageService,

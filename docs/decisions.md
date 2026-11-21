@@ -29,3 +29,9 @@
 2026-11-17 — Require a bound isolated restore before opt-in artifact retention — protect current/previous releases, legacy pins and container-referenced images; verify backup/source hashes and actual migration history before deleting only allowlisted project artifacts.
 
 2026-11-17 — Fail CI on flaky retries and correlate HTTP 500 responses with opaque error IDs — retained historical evidence does not establish the signup failure's cause; future diagnostics must link the fixture to safe server metadata without logging request identities or credentials.
+
+2026-11-21 — Defer iGPSPORT, Bryton and Magene until direct vendor access is confirmed — match Garmin and Wahoo with mobile authorization and automatic workout delivery through the vendor connection.
+
+2026-11-21 — Offer preset, custom UTC and complete available activity history across connected providers — athletes can recover activities from their vendor account within its API limits, with repeat imports and duplicate protection.
+
+2026-11-21 — Disable built-in AI and external AI agent access in the application — coaches and athletes do not use those features, and the existing data is retained.

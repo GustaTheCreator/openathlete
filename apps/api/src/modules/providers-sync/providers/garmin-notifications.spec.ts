@@ -338,6 +338,44 @@ describe('GarminProviderService.processNotification', () => {
     expect(days).toBeLessThan(31);
   });
 
+  it('clamps a selected range to Garmin’s 31-day backfill window', async () => {
+    const sharingAccount = {
+      ...account,
+      scopes: 'permissions:ACTIVITY_EXPORT',
+    } as unknown as ProviderAccount;
+    const { service } = setup([sharingAccount]);
+    mockedGet.mockResolvedValue({ status: 202, data: '' });
+    const now = Math.floor(Date.now() / 1000);
+    const end = now - 2 * 24 * 3600;
+
+    await service.queueFullImport(sharingAccount, {
+      startDate: new Date((now - 365 * 24 * 3600) * 1000),
+      endDate: new Date(end * 1000),
+    });
+
+    const { summaryStartTimeInSeconds, summaryEndTimeInSeconds } =
+      mockedGet.mock.calls[0][1].params;
+    expect(summaryEndTimeInSeconds).toBe(end);
+    expect(summaryStartTimeInSeconds).toBeGreaterThan(now - 31 * 24 * 3600);
+  });
+
+  it('does not ask Garmin for a range outside its retained history', async () => {
+    const sharingAccount = {
+      ...account,
+      scopes: 'permissions:ACTIVITY_EXPORT',
+    } as unknown as ProviderAccount;
+    const { service } = setup([sharingAccount]);
+    const end = new Date(Date.now() - 60 * 24 * 3600 * 1000);
+
+    await expect(
+      service.queueFullImport(sharingAccount, {
+        startDate: new Date(end.getTime() - 24 * 3600 * 1000),
+        endDate: end,
+      }),
+    ).resolves.toEqual({ queuedActivities: 0 });
+    expect(mockedGet).not.toHaveBeenCalled();
+  });
+
   it('imports backfilled activities as history, recent ones as new', async () => {
     const { service, queue } = setup([account]);
     const now = Math.floor(Date.now() / 1000);

@@ -231,6 +231,9 @@ describe('CorosProviderService', () => {
 
   it('queues only the activities it does not hold', async () => {
     const { service, prisma, queue } = buildService();
+    const recentDate = new Date(Date.now() - 24 * 3_600_000)
+      .toISOString()
+      .slice(0, 10);
     prisma.providerAccount.findUnique.mockResolvedValue({
       ...account,
       importActivitiesEnabled: true,
@@ -239,10 +242,10 @@ describe('CorosProviderService', () => {
     post.mockResolvedValue(
       toolAnswer(`Sport Records (2 records)
 
-1. Outdoor Run — 2026-10-06
+1. Outdoor Run — ${recentDate}
    LabelId: 11 | SportType: 100
 
-2. Outdoor Run — 2026-10-07
+2. Outdoor Run — ${recentDate}
    LabelId: 22 | SportType: 100`),
     );
 
@@ -256,10 +259,11 @@ describe('CorosProviderService', () => {
 
   it('spreads the history over days, within the file quota', async () => {
     const { service, queue } = buildService();
+    const recentDate = new Date().toISOString().slice(0, 10);
     const records = Array.from(
       { length: 95 },
       (_, index) =>
-        `${index + 1}. Run — 2026-10-06\n   LabelId: ${index} | SportType: 100`,
+        `${index + 1}. Run — ${recentDate}\n   LabelId: ${index} | SportType: 100`,
     ).join('\n\n');
     post
       .mockResolvedValueOnce(toolAnswer(`Sport Records\n\n${records}`))
@@ -274,6 +278,138 @@ describe('CorosProviderService', () => {
       40, 40, 15,
     ]);
     expect(calls.map(([, , delay]) => delay / 3_600_000)).toEqual([0, 25, 50]);
+  });
+
+  it('keeps requesting bounded history through empty windows', async () => {
+    const { service } = buildService();
+    const callTool = jest
+      .spyOn(service, 'callTool')
+      .mockResolvedValue('No sport records found.');
+    const startDate = new Date('2026-10-01T00:00:00.000Z');
+    const endDate = new Date('2026-10-02T23:59:59.999Z');
+
+    await service.queueFullImport(account, { startDate, endDate });
+
+    expect(callTool).toHaveBeenCalledTimes(1);
+    expect(callTool).toHaveBeenCalledWith(account, 'querySportRecords', {
+      startDate: '20260930',
+      endDate: '20261003',
+      sportTypeCodes: [65535],
+      limit: 200,
+    });
+  });
+
+  it('queries all available COROS records in one adaptive date range', async () => {
+    const { service } = buildService();
+    const callTool = jest
+      .spyOn(service, 'callTool')
+      .mockResolvedValue('No sport records found.');
+    const endDate = new Date('2026-10-31T23:59:59.999Z');
+
+    await service.queueFullImport(account, { endDate });
+
+    expect(callTool).toHaveBeenCalledWith(account, 'querySportRecords', {
+      startDate: '19691231',
+      endDate: '20261101',
+      sportTypeCodes: [65535],
+      limit: 200,
+    });
+  });
+
+  it('splits a saturated activity query into disjoint date ranges', async () => {
+    const { service } = buildService();
+    const callTool = jest.spyOn(service, 'callTool');
+    const records = Array.from(
+      { length: 200 },
+      (_, index) =>
+        `${index + 1}. Run — ${index < 100 ? '2026-10-06' : '2026-10-20'}\n   LabelId: ${index} | SportType: 100`,
+    ).join('\n\n');
+    const firstHalf = records.split('\n\n').slice(0, 100).join('\n\n');
+    const secondHalf = records.split('\n\n').slice(100).join('\n\n');
+    callTool
+      .mockResolvedValueOnce(`Sport Records\n\n${records}`)
+      .mockResolvedValueOnce(`Sport Records\n\n${firstHalf}`)
+      .mockResolvedValueOnce(`Sport Records\n\n${secondHalf}`);
+
+    const activities = await service.importActivities(account, {
+      startDate: new Date('2026-10-01T00:00:00.000Z'),
+      endDate: new Date('2026-10-31T23:59:59.999Z'),
+    });
+
+    expect(activities).toHaveLength(200);
+    expect(callTool).toHaveBeenCalledTimes(3);
+    expect(callTool.mock.calls[1][2]).toMatchObject({
+      startDate: '20260930',
+      endDate: '20261016',
+    });
+    expect(callTool.mock.calls[2][2]).toMatchObject({
+      startDate: '20261017',
+      endDate: '20261101',
+    });
+  });
+
+  it('filters COROS local-date envelope records by their exact timestamps', async () => {
+    const { service } = buildService();
+    const startDate = new Date('2026-10-01T00:00:00.000Z');
+    const endDate = new Date('2026-10-01T23:59:59.999Z');
+    const outsideStart = Math.floor(
+      new Date('2026-09-30T22:59:59.000Z').getTime() / 1000,
+    );
+    const insideStart = Math.floor(
+      new Date('2026-10-01T01:00:00.000Z').getTime() / 1000,
+    );
+    const callTool = jest.spyOn(service, 'callTool').mockResolvedValue(
+      `Sport Records (2 records)
+
+1. Run — 2026-09-30
+   LabelId: 1 | SportType: 100 | startTimestamp=${outsideStart}
+
+2. Run — 2026-10-01
+   LabelId: 2 | SportType: 100 | startTimestamp=${insideStart}`,
+    );
+
+    const activities = await service.importActivities(account, {
+      startDate,
+      endDate,
+    });
+
+    expect(callTool.mock.calls[0][2]).toMatchObject({
+      startDate: '20260930',
+      endDate: '20261002',
+    });
+    expect(activities.map(({ externalId }) => externalId)).toEqual(['2']);
+  });
+
+  it('fails instead of dropping records when one COROS day reaches the query limit', async () => {
+    const { service } = buildService();
+    const records = Array.from(
+      { length: 200 },
+      (_, index) =>
+        `${index + 1}. Run — 2026-10-06\n   LabelId: ${index} | SportType: 100`,
+    ).join('\n\n');
+    jest
+      .spyOn(service, 'callTool')
+      .mockResolvedValue(`Sport Records\n\n${records}`);
+
+    await expect(
+      service.importActivities(account, {
+        startDate: new Date('2026-10-06T00:00:00.000Z'),
+        endDate: new Date('2026-10-06T23:59:59.999Z'),
+      }),
+    ).rejects.toThrow('cannot be imported without risking omissions');
+  });
+
+  it('skips delayed history batches after the COROS account changes', async () => {
+    const { service, prisma, queue } = buildService();
+    prisma.providerAccount.findUnique.mockResolvedValue({
+      ...account,
+      externalUserId: 'new-user',
+      importActivitiesEnabled: true,
+    });
+
+    await service.importHistoryBatch(1, [], 'old-user');
+
+    expect(queue.addActivityImportJobs).not.toHaveBeenCalled();
   });
 });
 

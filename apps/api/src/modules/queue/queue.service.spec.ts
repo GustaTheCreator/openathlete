@@ -41,6 +41,29 @@ describe('QueueService activity imports', () => {
     expect(queue.addBulk).not.toHaveBeenCalled();
   });
 
+  it('binds history activities to the connected provider identity', async () => {
+    await service.addActivityImportJobs(
+      {
+        provider: 'GARMIN',
+        providerAccountId: 12,
+        externalUserId: 'remote-123',
+      } as never,
+      [activity],
+      true,
+    );
+
+    expect(queue.addBulk).toHaveBeenCalledWith([
+      expect.objectContaining({
+        data: {
+          providerAccountId: 12,
+          activity,
+          bulkImport: true,
+          providerExternalUserId: 'remote-123',
+        },
+      }),
+    ]);
+  });
+
   it.each(['getState', 'remove'] as const)(
     'propagates a bulk existing-job %s failure',
     async (operation) => {

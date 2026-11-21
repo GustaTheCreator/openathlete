@@ -455,8 +455,9 @@ export class CorosProviderService
       sportTypeCodes: [ALL_SPORTS_CODE],
       limit: RECORDS_PER_REQUEST,
     });
+    let records: CorosSportRecord[];
     try {
-      return parseSportRecords(text);
+      records = parseSportRecords(text);
     } catch (error) {
       // The format is undocumented: what it looked like is what fixes it
       if (error instanceof CorosFormatError) {
@@ -466,6 +467,39 @@ export class CorosProviderService
       }
       throw error;
     }
+
+    if (records.length < RECORDS_PER_REQUEST) return records;
+
+    const startDay = Date.UTC(
+      startDate.getUTCFullYear(),
+      startDate.getUTCMonth(),
+      startDate.getUTCDate(),
+    );
+    const endDay = Date.UTC(
+      endDate.getUTCFullYear(),
+      endDate.getUTCMonth(),
+      endDate.getUTCDate(),
+    );
+    if (startDay >= endDay) {
+      throw new Error(
+        `COROS returned ${RECORDS_PER_REQUEST} activities for one day. The range cannot be imported without risking omissions.`,
+      );
+    }
+
+    const middleDay = Math.floor((startDay + endDay) / (2 * DAY_MS));
+    const firstEnd = new Date(middleDay * DAY_MS);
+    const secondStart = new Date((middleDay + 1) * DAY_MS);
+    const firstHalf = await this.listRecords(
+      account,
+      new Date(startDay),
+      firstEnd,
+    );
+    const secondHalf = await this.listRecords(
+      account,
+      secondStart,
+      new Date(endDay),
+    );
+    return [...firstHalf, ...secondHalf];
   }
 
   private toImportedActivity(record: CorosSportRecord): ImportedActivity {
@@ -495,9 +529,22 @@ export class CorosProviderService
     const startDate =
       options?.startDate ??
       new Date(endDate.getTime() - SYNC_WINDOW_DAYS * DAY_MS);
-    const records = await this.listRecords(account, startDate, endDate);
+    if (startDate > endDate) return [];
+    const queryStartDate = new Date(startDate);
+    queryStartDate.setUTCDate(queryStartDate.getUTCDate() - 1);
+    const queryEndDate = new Date(endDate);
+    queryEndDate.setUTCDate(queryEndDate.getUTCDate() + 1);
+    const records = await this.listRecords(
+      account,
+      queryStartDate,
+      queryEndDate,
+    );
     return records
       .map((record) => this.toImportedActivity(record))
+      .filter(
+        ({ startDate: activityStart }) =>
+          activityStart >= startDate && activityStart <= endDate,
+      )
       .slice(0, options?.limit);
   }
 
@@ -534,29 +581,41 @@ export class CorosProviderService
   }
 
   /**
-   * Queue the whole history. At 50 files a day it can't all arrive at once,
-   * and an activity past the quota would be lost: it goes out in daily
-   * batches. The window walks back until a year without any activity.
+   * Queue complete requested history, splitting saturated queries. Daily file
+   * quotas require the resulting activities to be sent in delayed batches.
    */
-  async queueFullImport(account: ProviderAccount): Promise<FullImportResult> {
+  async queueFullImport(
+    account: ProviderAccount,
+    options?: ImportOptions,
+  ): Promise<FullImportResult> {
     if (account.importMetricsEnabled) {
       await this.queueService.addCorosMetricsJob(account.providerAccountId);
     }
 
-    const activities: ImportedActivity[] = [];
-    let endDate = new Date();
-    let emptyWindows = 0;
-    while (emptyWindows < HISTORY_EMPTY_WINDOWS_LIMIT) {
-      const startDate = new Date(
-        endDate.getTime() - HISTORY_WINDOW_DAYS * DAY_MS,
-      );
-      const found = await this.importActivities(account, {
-        startDate,
-        endDate,
+    let activities: ImportedActivity[];
+    if (options) {
+      activities = await this.importActivities(account, {
+        startDate: options.startDate ?? new Date(0),
+        endDate: options.endDate ?? new Date(),
       });
-      activities.push(...found);
-      emptyWindows = found.length === 0 ? emptyWindows + 1 : 0;
-      endDate = new Date(startDate.getTime() - DAY_MS);
+    } else {
+      activities = [];
+      let endDate = new Date();
+      let emptyWindows = 0;
+      while (emptyWindows < HISTORY_EMPTY_WINDOWS_LIMIT) {
+        const startDate = new Date(
+          endDate.getTime() - HISTORY_WINDOW_DAYS * DAY_MS,
+        );
+        const found = await this.importActivities(account, {
+          startDate,
+          endDate,
+        });
+        activities.push(...found);
+        emptyWindows = found.length === 0 ? emptyWindows + 1 : 0;
+        endDate = new Date(startDate);
+        endDate.setUTCDate(endDate.getUTCDate() - 1);
+        endDate.setUTCHours(23, 59, 59, 999);
+      }
     }
 
     const missing = await this.withoutKnown(activities);
@@ -568,6 +627,7 @@ export class CorosProviderService
           (batch + 1) * HISTORY_BATCH_SIZE,
         ),
         batch * HISTORY_BATCH_DELAY_MS,
+        account.externalUserId,
       );
     }
     return { queuedActivities: missing.length };
@@ -576,9 +636,16 @@ export class CorosProviderService
   async importHistoryBatch(
     providerAccountId: number,
     activities: ImportedActivity[],
+    externalUserId?: string | null,
   ): Promise<void> {
     const account = await this.activeAccount(providerAccountId);
     if (!account?.importActivitiesEnabled) return;
+    if (
+      externalUserId !== undefined &&
+      externalUserId !== account.externalUserId
+    ) {
+      return;
+    }
     await this.queueService.addActivityImportJobs(account, activities, true);
   }
 

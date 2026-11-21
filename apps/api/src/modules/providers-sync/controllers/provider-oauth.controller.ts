@@ -44,9 +44,13 @@ import type { ApiEnvSchemaType } from '@openathlete/shared';
 import {
   COROS_REGIONS,
   CorosRegion,
+  ProviderFullImportRequestDto,
+  ProviderHistoryPeriod,
   ProviderPreferencesDto,
   getProviderSyncCapabilities,
   isFullImportInProgress,
+  providerFullImportRequestSchema,
+  providerHistoryPeriodSchema,
   providerPreferencesSchema,
 } from '@openathlete/shared';
 
@@ -75,6 +79,21 @@ import {
 
 function toConnectorProvider(provider: ConnectorProvider): ConnectorProvider {
   return provider as unknown as ConnectorProvider;
+}
+
+function historyStartDate(endDate: Date, period: ProviderHistoryPeriod): Date {
+  const startDate = new Date(endDate);
+  if (period === '1w') {
+    startDate.setUTCDate(startDate.getUTCDate() - 7);
+    return startDate;
+  }
+
+  const months = { '1m': 1, '2m': 2, '6m': 6, '1y': 12 }[period];
+  const day = startDate.getUTCDate();
+  startDate.setUTCDate(1);
+  startDate.setUTCMonth(startDate.getUTCMonth() - months + 1, 0);
+  startDate.setUTCDate(Math.min(day, startDate.getUTCDate()));
+  return startDate;
 }
 
 @Injectable()
@@ -868,7 +887,29 @@ export class ProviderOAuthController {
   @ApiOperation({
     summary: 'Trigger full historical activity import',
     description:
-      'Queues a full historical import of all activities from a connected provider and returns immediately: the worker lists the history and imports activities progressively, and fullImportCompletedAt is set once every activity is queued. Only providers that support full import (Strava, Garmin, Suunto, COROS) can use this endpoint. COROS serves 50 activity files a day, so its history then arrives over days. Activity import must be enabled for the provider. If a full import is already in progress (requested less than 24 hours ago), the request is rejected. If a full import was already completed, returns success without re-importing. Some providers may request a backfill, in which case the import completion date is set to null until backfill completes.',
+      'Queues the selected activity history for a connected provider, within its API limits. Only one history request may be in progress per account.',
+  })
+  @ApiBody({
+    required: false,
+    schema: {
+      type: 'object',
+      properties: {
+        period: {
+          type: 'string',
+          enum: [...providerHistoryPeriodSchema.options, 'custom', 'all'],
+        },
+        startDate: {
+          type: 'string',
+          format: 'date',
+          description: 'Inclusive UTC day for a custom period',
+        },
+        endDate: {
+          type: 'string',
+          format: 'date',
+          description: 'Inclusive UTC day for a custom period',
+        },
+      },
+    },
   })
   @ApiParam({
     name: 'provider',
@@ -916,8 +957,11 @@ export class ProviderOAuthController {
   async importAllActivities(
     @JwtUser() user: AuthUser,
     @Param('provider') provider: string,
+    @Body(new ZodValidationPipe(providerFullImportRequestSchema))
+    request: ProviderFullImportRequestDto = {},
   ) {
     const providerEnum = provider.toUpperCase() as ConnectorProvider;
+    const { period } = request;
     const { account } = await this.getProviderAccountForUser(
       user,
       providerEnum,
@@ -938,7 +982,7 @@ export class ProviderOAuthController {
       );
     }
 
-    if (account.fullImportCompletedAt) {
+    if (!period && account.fullImportCompletedAt) {
       return { success: true, message: 'Full import already completed' };
     }
 
@@ -948,17 +992,65 @@ export class ProviderOAuthController {
       );
     }
 
-    // Listing the whole history can take minutes: the worker does it
-    await this.prisma.providerAccount.update({
-      where: { providerAccountId: account.providerAccountId },
-      data: { fullImportRequestedAt: new Date(), fullImportCompletedAt: null },
+    const requestedAt = new Date();
+    const accountKey = { providerAccountId: account.providerAccountId };
+    const requestData = {
+      fullImportRequestedAt: requestedAt,
+      fullImportCompletedAt: null,
+    };
+    let startDate: Date | undefined;
+    let endDate = requestedAt;
+    if (request.period === 'custom') {
+      startDate = new Date(`${request.startDate}T00:00:00.000Z`);
+      const endOfDay = new Date(`${request.endDate}T23:59:59.999Z`);
+      endDate = endOfDay < requestedAt ? endOfDay : requestedAt;
+      if (
+        startDate > endDate ||
+        request.endDate > requestedAt.toISOString().slice(0, 10)
+      ) {
+        throw new BadRequestException(
+          'The historical import dates must not be in the future',
+        );
+      }
+    } else if (request.period && request.period !== 'all') {
+      startDate = historyStartDate(requestedAt, request.period);
+    }
+    const history = {
+      startDate: startDate?.toISOString(),
+      endDate: endDate.toISOString(),
+      requestedAt: requestedAt.toISOString(),
+      externalUserId: account.externalUserId,
+    };
+
+    const claimed = await this.prisma.providerAccount.updateMany({
+      where: {
+        ...accountKey,
+        status: 'active',
+        importActivitiesEnabled: true,
+        externalUserId: account.externalUserId,
+        fullImportRequestedAt: account.fullImportRequestedAt,
+        fullImportCompletedAt: account.fullImportCompletedAt,
+      },
+      data: requestData,
     });
+    if (claimed.count !== 1) {
+      throw new BadRequestException('Historical import state has changed');
+    }
     try {
-      await this.queueService.addFullImportJob(account.providerAccountId);
+      const queued = await this.queueService.addFullImportJob(
+        account.providerAccountId,
+        history,
+      );
+      if (!queued) {
+        throw new BadRequestException('A historical import is already queued');
+      }
     } catch (error) {
-      await this.prisma.providerAccount.update({
-        where: { providerAccountId: account.providerAccountId },
-        data: { fullImportRequestedAt: null },
+      await this.prisma.providerAccount.updateMany({
+        where: { ...accountKey, fullImportRequestedAt: requestedAt },
+        data: {
+          fullImportRequestedAt: account.fullImportRequestedAt,
+          fullImportCompletedAt: account.fullImportCompletedAt,
+        },
       });
       throw error;
     }

@@ -8,8 +8,6 @@ import { cn } from '@/utils/shadcn';
 import { ComponentType, useMemo } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 
-import { AgentsTab } from './agents/agents-tab';
-import { AiTab } from './ai/ai-tab';
 import { AthletesTab } from './athletes-tab';
 import { CoachesTab } from './coaches-tab';
 import { ConnectorsTab } from './connectors-tab';
@@ -26,8 +24,6 @@ const TAB_PAGES: Record<string, ComponentType> = {
   profile: ProfileTab,
   equipment: EquipmentTab,
   training_zones: TrainingZonesTab,
-  ai: AiTab,
-  agents: AgentsTab,
   athletes: AthletesTab,
   coaches: CoachesTab,
   invitations: InvitationsTab,

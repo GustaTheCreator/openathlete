@@ -30,6 +30,7 @@ import {
 } from '../../core/helpers/round-activity-values';
 import { PrismaService } from '../../prisma/services/prisma.service';
 import { QueueService } from '../../queue/queue.service';
+import type { ProviderFullImportJobData } from '../../queue/queue.service';
 import { BaseProviderService, OAuthConfig } from '../base';
 import {
   ImportOptions,
@@ -642,6 +643,104 @@ export class WahooProviderService
     return activities;
   }
 
+  private async queueMissingActivities(
+    account: ProviderAccount,
+    activities: ImportedActivity[],
+    bulkImport = false,
+  ): Promise<number> {
+    if (!activities.length) return 0;
+    const known = await this.prisma.eventActivity.findMany({
+      where: {
+        provider: ConnectorProvider.WAHOO,
+        event: { athleteId: account.athleteId },
+        externalId: { in: activities.map(({ externalId }) => externalId) },
+      },
+      select: { externalId: true },
+    });
+    const existingIds = new Set(known.map(({ externalId }) => externalId));
+    const missing = activities.filter(
+      ({ externalId }) => !existingIds.has(externalId),
+    );
+    if (missing.length)
+      await this.queueService.addActivityImportJobs(
+        account,
+        missing,
+        bulkImport,
+      );
+    return missing.length;
+  }
+
+  async queueFullImport(
+    account: ProviderAccount,
+    history: NonNullable<ProviderFullImportJobData['history']>,
+    checkpoint: (progress: {
+      nextPage: number;
+      queuedActivities: number;
+    }) => Promise<void>,
+  ) {
+    const startDate = history.startDate ? new Date(history.startDate) : null;
+    const endDate = new Date(history.endDate);
+    if (
+      !Number.isFinite(endDate.getTime()) ||
+      (startDate &&
+        (!Number.isFinite(startDate.getTime()) || startDate > endDate))
+    ) {
+      throw new Error('Wahoo history date range is invalid');
+    }
+    if (
+      !history.externalUserId ||
+      history.externalUserId !== account.externalUserId
+    ) {
+      throw new Error('Wahoo account identity changed; restart the import');
+    }
+
+    let page = history.nextPage ?? 1;
+    let queuedActivities = history.queuedActivities ?? 0;
+    while (true) {
+      const response = await this.makeApiRequest<unknown>(
+        account,
+        'GET',
+        `/v1/workouts?page=${page}&per_page=${PAGE_SIZE}`,
+      );
+      const { workouts, total } = workoutList(response);
+      let reachedStart = false;
+      const activities: ImportedActivity[] = [];
+      for (const workout of workouts) {
+        const workoutStart = workout.starts ? new Date(workout.starts) : null;
+        if (
+          startDate &&
+          workoutStart &&
+          Number.isFinite(workoutStart.getTime()) &&
+          workoutStart < startDate
+        ) {
+          reachedStart = true;
+          break;
+        }
+        const activity = this.toImportedActivity(workout, account.athleteId);
+        if (!activity) continue;
+        if (activity.startDate > endDate) continue;
+        activities.push(activity);
+      }
+
+      queuedActivities += await this.queueMissingActivities(
+        account,
+        activities,
+        true,
+      );
+
+      page++;
+      await checkpoint({ nextPage: page, queuedActivities });
+      if (
+        reachedStart ||
+        workouts.length < PAGE_SIZE ||
+        (total !== undefined && (page - 1) * PAGE_SIZE >= total)
+      ) {
+        break;
+      }
+    }
+    return { queuedActivities };
+  }
+
   private async fetchFit(
     account: ProviderAccount,
     externalId: string,
@@ -852,24 +951,7 @@ export class WahooProviderService
           startDate: new Date(Date.now() - SYNC_WINDOW_DAYS * 86_400_000),
         });
         if (activities.length) {
-          const known = await this.prisma.eventActivity.findMany({
-            where: {
-              provider: ConnectorProvider.WAHOO,
-              event: { athleteId: account.athleteId },
-              externalId: {
-                in: activities.map(({ externalId }) => externalId),
-              },
-            },
-            select: { externalId: true },
-          });
-          const existingIds = new Set(
-            known.map(({ externalId }) => externalId),
-          );
-          const missing = activities.filter(
-            ({ externalId }) => !existingIds.has(externalId),
-          );
-          if (missing.length)
-            await this.queueService.addActivityImportJobs(account, missing);
+          await this.queueMissingActivities(account, activities);
         }
       } catch (error) {
         this.logger.warn(

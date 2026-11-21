@@ -37,6 +37,8 @@ export const routes = {
     resubscribe: '/emails/resubscribe',
   },
   activityImport: {
+    connections: '/activity-import/connections',
+    connection: (grantId: number) => `/activity-import/connections/${grantId}`,
     fit: '/activity-import/fit',
     gpx: '/activity-import/gpx',
     tcx: '/activity-import/tcx',

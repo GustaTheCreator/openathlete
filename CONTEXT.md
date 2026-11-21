@@ -1,6 +1,27 @@
 # Context
 
-Updated: 2026-11-17
+Updated: 2026-11-21
+
+## Cycling computer integrations
+
+iGPSPORT, Bryton and Magene are deferred until a direct integration can use
+the same athlete experience as Garmin and Wahoo. Athletes authorize their
+vendor account on mobile and receive planned workouts automatically. The
+Intervals.icu prototype and Windows companion were withdrawn locally before
+deployment.
+
+Athletes can request completed activity history from Wahoo, Garmin, Strava,
+Suunto, COROS and Polar. The connector offers presets, inclusive UTC dates
+and a separate action for all available history. Provider limits apply,
+including Garmin's 31-day backfill and Polar's 30-day post-connection feed.
+Regular Wahoo sync still covers the last seven days. Repeated requests and
+concurrent imports from connected providers use existing activity IDs and
+cross-provider duplicate detection.
+
+## Product features
+
+Built-in AI features and AI agent access are disabled in the installed
+application. The code and persisted data are retained for possible future use.
 
 ## Workflow follow-up
 

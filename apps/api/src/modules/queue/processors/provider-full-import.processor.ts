@@ -20,8 +20,10 @@ import { ProviderRateLimitError } from '../../providers-sync/errors/provider-rat
 import {
   CorosProviderService,
   GarminProviderService,
+  PolarProviderService,
   StravaProviderService,
   SuuntoProviderService,
+  WahooProviderService,
 } from '../../providers-sync/providers';
 import { ProviderFullImportJobData } from '../queue.service';
 
@@ -49,13 +51,17 @@ export class ProviderFullImportProcessor extends WorkerHost {
     private readonly suuntoProviderService: SuuntoProviderService,
     @Inject(forwardRef(() => CorosProviderService))
     private readonly corosProviderService: CorosProviderService,
+    @Inject(forwardRef(() => WahooProviderService))
+    private readonly wahooProviderService: WahooProviderService,
+    @Inject(forwardRef(() => PolarProviderService))
+    private readonly polarProviderService: PolarProviderService,
     @Optional() private readonly analytics?: AnalyticsService,
   ) {
     super();
   }
 
   async process(job: Job<ProviderFullImportJobData>) {
-    const { providerAccountId } = job.data;
+    const { providerAccountId, history } = job.data;
     const account = await this.prisma.providerAccount.findUnique({
       where: { providerAccountId },
     });
@@ -64,15 +70,23 @@ export class ProviderFullImportProcessor extends WorkerHost {
     if (
       !account ||
       account.status !== 'active' ||
-      !account.importActivitiesEnabled
+      !account.importActivitiesEnabled ||
+      (history && account.externalUserId !== history.externalUserId)
     ) {
-      if (account) await this.resetRequest(providerAccountId);
+      if (account)
+        await this.resetRequest(providerAccountId, history?.requestedAt);
+      return { queuedActivities: 0, skipped: true };
+    }
+    if (
+      history &&
+      account.fullImportRequestedAt?.toISOString() !== history.requestedAt
+    ) {
       return { queuedActivities: 0, skipped: true };
     }
 
     let result: FullImportResult;
     try {
-      result = await this.runProviderImport(account);
+      result = await this.runProviderImport(account, job);
     } catch (error) {
       // Out of quota: pause the whole queue, as the next accounts would be
       // refused too, and put the job back without spending an attempt
@@ -87,13 +101,31 @@ export class ProviderFullImportProcessor extends WorkerHost {
       throw error;
     }
 
-    await this.prisma.providerAccount.update({
-      where: { providerAccountId },
-      data: {
-        // A Garmin backfill completes later, through webhooks
-        fullImportCompletedAt: result.backfillRequested ? null : new Date(),
-      },
-    });
+    if (history) {
+      const updated = await this.prisma.providerAccount.updateMany({
+        where: {
+          providerAccountId,
+          status: 'active',
+          importActivitiesEnabled: true,
+          externalUserId: history.externalUserId,
+          fullImportRequestedAt: new Date(history.requestedAt),
+        },
+        data: { fullImportCompletedAt: new Date() },
+      });
+      if (!updated.count) {
+        this.logger.warn(
+          `Historical import for account ${providerAccountId} finished after the active request changed`,
+        );
+      }
+    } else {
+      await this.prisma.providerAccount.update({
+        where: { providerAccountId },
+        data: {
+          // A Garmin backfill completes later, through webhooks
+          fullImportCompletedAt: result.backfillRequested ? null : new Date(),
+        },
+      });
+    }
 
     this.logger.log(
       `Historical ${account.provider} import for account ${providerAccountId}: ${
@@ -117,22 +149,48 @@ export class ProviderFullImportProcessor extends WorkerHost {
       error instanceof UnrecoverableError ||
       job.attemptsMade >= (job.opts.attempts ?? 1)
     ) {
-      await this.resetRequest(job.data.providerAccountId);
+      await this.resetRequest(
+        job.data.providerAccountId,
+        job.data.history?.requestedAt,
+      );
     }
   }
 
   private runProviderImport(
     account: ProviderAccount,
+    job: Job<ProviderFullImportJobData>,
   ): Promise<FullImportResult> {
+    const { history } = job.data;
+    const options = history && {
+      startDate: history.startDate ? new Date(history.startDate) : undefined,
+      endDate: new Date(history.endDate),
+    };
     switch (account.provider) {
       case ConnectorProvider.STRAVA:
-        return this.stravaProviderService.queueFullImport(account);
+        return this.stravaProviderService.queueFullImport(account, options);
       case ConnectorProvider.GARMIN:
-        return this.garminProviderService.queueFullImport(account);
+        return this.garminProviderService.queueFullImport(account, options);
       case ConnectorProvider.SUUNTO:
-        return this.suuntoProviderService.queueFullImport(account);
+        return this.suuntoProviderService.queueFullImport(account, options);
       case ConnectorProvider.COROS:
-        return this.corosProviderService.queueFullImport(account);
+        return this.corosProviderService.queueFullImport(account, options);
+      case ConnectorProvider.POLAR:
+        return this.polarProviderService.queueFullImport(account, options);
+      case ConnectorProvider.WAHOO: {
+        if (!history) {
+          throw new UnrecoverableError('Wahoo history range is missing');
+        }
+        return this.wahooProviderService.queueFullImport(
+          account,
+          history,
+          async (progress) => {
+            await job.updateData({
+              ...job.data,
+              history: { ...history, ...progress },
+            });
+          },
+        );
+      }
       default:
         throw new Error(
           `Historical import is not available for ${account.provider}`,
@@ -140,9 +198,18 @@ export class ProviderFullImportProcessor extends WorkerHost {
     }
   }
 
-  private async resetRequest(providerAccountId: number) {
+  private async resetRequest(
+    providerAccountId: number,
+    requestAnchor?: string,
+  ) {
     await this.prisma.providerAccount.updateMany({
-      where: { providerAccountId, fullImportCompletedAt: null },
+      where: {
+        providerAccountId,
+        fullImportCompletedAt: null,
+        ...(requestAnchor && {
+          fullImportRequestedAt: new Date(requestAnchor),
+        }),
+      },
       data: { fullImportRequestedAt: null },
     });
   }

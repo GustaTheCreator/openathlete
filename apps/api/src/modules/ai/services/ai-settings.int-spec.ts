@@ -74,6 +74,7 @@ describe('AiSettingsService (PostgreSQL)', () => {
       new AiUsageService(prisma, policy as AiPolicyService),
       cipher,
       {},
+      true,
     );
     service = new AiSettingsService(
       prisma,
