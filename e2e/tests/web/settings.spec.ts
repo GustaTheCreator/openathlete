@@ -7,8 +7,6 @@ const TABS = [
   'profile',
   'equipment',
   'training_zones',
-  'ai',
-  'agents',
   'coaches',
   'invitations',
   'contribute',

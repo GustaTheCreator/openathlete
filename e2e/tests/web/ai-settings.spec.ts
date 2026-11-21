@@ -16,13 +16,19 @@ test('AI settings and calendar actions are unavailable', async ({
   const problems = trackPageProblems(page);
 
   await page.goto('/dashboard/settings?tab=ai');
-  await expect(page.getByRole('heading', { name: 'AI' })).toHaveCount(0);
+  await expect(
+    page.getByRole('heading', { name: 'Connectors', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: 'AI', exact: true }),
+  ).toHaveCount(0);
   await expect(page.locator('[data-ai-data-sharing]')).toHaveCount(0);
 
   await page.goto('/dashboard/calendar');
   await page.locator('[data-calendar-day]').first().click({ button: 'right' });
+  await expect(page.getByRole('menu')).toBeVisible();
   await expect(
-    page.getByRole('menuitem', { name: 'Create with AI' }),
+    page.getByRole('menuitem', { name: 'Create with AI', exact: true }),
   ).toHaveCount(0);
 
   const headers = apiHeaders(undefined, athlete.accessToken);
