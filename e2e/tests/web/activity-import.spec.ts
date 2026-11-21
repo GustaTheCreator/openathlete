@@ -115,8 +115,8 @@ test('imports the selected Wahoo history period', async ({ page }) => {
     'Custom',
   ]);
   await page.getByRole('option', { name: 'Custom' }).click();
-  await page.getByLabel('From').fill('2025-01-15');
-  await page.getByLabel('To').fill('2025-02-20');
+  await page.getByLabel('From', { exact: true }).fill('2025-01-15');
+  await page.getByLabel('To', { exact: true }).fill('2025-02-20');
   await page.getByRole('button', { name: 'Import', exact: true }).click();
 
   await expect
