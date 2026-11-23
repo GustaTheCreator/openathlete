@@ -35,3 +35,5 @@
 2026-11-21 — Offer preset, custom UTC and complete available activity history across connected providers — athletes can recover activities from their vendor account within its API limits, with repeat imports and duplicate protection.
 
 2026-11-21 — Disable built-in AI and external AI agent access in the application — coaches and athletes do not use those features, and the existing data is retained.
+
+2026-11-23 — Reserve Wahoo API capacity for account association and share upstream cooldowns through Redis — historical imports can otherwise consume the app-wide quota used by both workout sync and OAuth profile lookups.

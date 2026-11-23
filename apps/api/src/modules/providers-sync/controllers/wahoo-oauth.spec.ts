@@ -41,6 +41,7 @@ function setup(configured = true) {
     }),
   };
   const wahoo = {
+    assertCanConnect: jest.fn().mockResolvedValue(undefined),
     getAuthorizationUriWithPKCE: jest.fn().mockReturnValue({
       uri: 'https://api.wahooligan.com/oauth/authorize',
       state: 's'.repeat(43),

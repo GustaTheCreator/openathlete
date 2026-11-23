@@ -2363,6 +2363,7 @@
   "player_log_title": "Séries feitas",
   "player_log_skipped": "pulada",
   "player_log_rounds": "AMRAP: {count} voltas",
+  "wahoo_connection_rate_limited": "O limite de solicitações da Wahoo foi atingido. Tente conectar sua conta novamente em cerca de {minutes} min.",
   "wahoo_disconnect_remote_pending": "A sincronização local está desativada. Remova este aplicativo da sua conta Wahoo para concluir a desconexão.",
   "footer_privacy": "Privacidade",
   "footer_source": "Código-fonte",

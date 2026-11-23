@@ -1,7 +1,13 @@
-import axios, { isAxiosError } from 'axios';
+import axios, { AxiosResponse, isAxiosError } from 'axios';
 import * as crypto from 'node:crypto';
 
-import { Inject, Injectable, forwardRef } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  forwardRef,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 
@@ -54,6 +60,10 @@ const PAGE_SIZE = 30;
 const SYNC_WINDOW_DAYS = 7;
 const MAX_FIT_BYTES = 64 * 1024 * 1024;
 const REFRESH_SKEW_MS = 30_000;
+// Leave room for account association and requests already in flight.
+const CONNECTION_QUOTA_RESERVE = 8;
+// Wahoo orders the quota headers from the longest window to the shortest.
+const QUOTA_WINDOWS_MS = [86_400_000, 3_600_000, 300_000];
 
 type WahooTokenResponse = {
   access_token: string;
@@ -149,10 +159,21 @@ function finite(value: unknown): number | undefined {
   return undefined;
 }
 
-function rateLimitDelay(error: unknown): number | undefined {
-  if (!isAxiosError(error)) return undefined;
-  const reset = Number(error.response?.headers?.['x-ratelimit-reset']);
-  return Number.isFinite(reset) && reset > 0 ? reset * 1000 : undefined;
+function rateLimitDelay(value: unknown): number | undefined {
+  const reset = finite(value);
+  if (reset === undefined || reset <= 0) return undefined;
+  return Math.min(reset * 1000, QUOTA_WINDOWS_MS[0]);
+}
+
+function wahooConnectionRateLimit(delayMs: number): HttpException {
+  return new HttpException(
+    {
+      statusCode: HttpStatus.TOO_MANY_REQUESTS,
+      code: 'WAHOO_RATE_LIMITED',
+      retryAfterSeconds: Math.ceil(delayMs / 1000),
+    },
+    HttpStatus.TOO_MANY_REQUESTS,
+  );
 }
 
 @Injectable()
@@ -263,6 +284,11 @@ export class WahooProviderService
     }
   }
 
+  async assertCanConnect(): Promise<void> {
+    const delay = await this.queueService.getWahooQuotaDelay('all');
+    if (delay > 0) throw wahooConnectionRateLimit(delay);
+  }
+
   async connect(
     code: string,
     codeVerifier: string,
@@ -271,6 +297,7 @@ export class WahooProviderService
     if (!validVerifier(codeVerifier)) {
       throw new Error('Invalid Wahoo code verifier');
     }
+    await this.assertCanConnect();
     const tokens = await this.requestToken({
       grant_type: 'authorization_code',
       code,
@@ -293,9 +320,13 @@ export class WahooProviderService
         },
         timeout: 30_000,
       })
-      .catch((error: unknown) => {
-        throw this.safeApiError(error, 'user lookup');
+      .catch(async (error: unknown) => {
+        const safeError = await this.trackApiError(error, 'user lookup');
+        if (safeError instanceof ProviderRateLimitError)
+          throw wahooConnectionRateLimit(safeError.retryAfterMs);
+        throw safeError;
       });
+    await this.reserveConnectionQuota(response.headers);
     if (response.data?.id === undefined || response.data.id === null) {
       throw new Error('Wahoo user response did not contain an id');
     }
@@ -334,10 +365,47 @@ export class WahooProviderService
     return remoteRevoked;
   }
 
+  private async reserveConnectionQuota(
+    headers: AxiosResponse['headers'] | undefined,
+  ): Promise<void> {
+    const header: unknown = headers?.['x-ratelimit-remaining'];
+    if (typeof header !== 'string') return;
+    const remaining = header.split(',').map(finite);
+    if (remaining.length !== QUOTA_WINDOWS_MS.length) return;
+    const windowIndex = remaining.findIndex(
+      (count) => count !== undefined && count <= CONNECTION_QUOTA_RESERVE,
+    );
+    if (windowIndex !== -1) {
+      const windowMs = QUOTA_WINDOWS_MS[windowIndex];
+      // Wahoo's daily allowance resets at midnight UTC. Successful responses
+      // report no countdown, so use Wahoo's clock if it sent a Date header.
+      const date = headers?.date;
+      const responseTime = typeof date === 'string' ? Date.parse(date) : NaN;
+      const delayMs =
+        windowIndex === 0
+          ? windowMs -
+            ((Number.isFinite(responseTime) ? responseTime : Date.now()) %
+              windowMs)
+          : windowMs;
+      await this.queueService.pauseWahooRequests('background', delayMs);
+    }
+  }
+
+  private async trackApiError(error: unknown, action: string): Promise<Error> {
+    const safeError = this.safeApiError(error, action);
+    if (safeError instanceof ProviderRateLimitError) {
+      await this.queueService.pauseWahooRequests('all', safeError.retryAfterMs);
+    }
+    return safeError;
+  }
+
   private safeApiError(error: unknown, action: string): Error {
     if (isAxiosError(error)) {
       if (error.response?.status === 429) {
-        return new ProviderRateLimitError('Wahoo', rateLimitDelay(error));
+        return new ProviderRateLimitError(
+          'Wahoo',
+          rateLimitDelay(error.response.headers?.['x-ratelimit-reset']),
+        );
       }
       if (error.response?.status === 401)
         return Object.assign(
@@ -403,6 +471,9 @@ export class WahooProviderService
     }
     if (account.status !== 'active')
       throw new Error('Wahoo account is not active');
+
+    const delay = await this.queueService.getWahooQuotaDelay('background');
+    if (delay > 0) throw new ProviderRateLimitError('Wahoo', delay);
 
     const isFresh = Boolean(
       account.expiresAt &&
@@ -575,9 +646,10 @@ export class WahooProviderService
         },
         timeout: 30_000,
       });
+      await this.reserveConnectionQuota(response.headers);
       return response.data;
     } catch (error) {
-      throw this.safeApiError(error, path);
+      throw await this.trackApiError(error, path);
     }
   }
 
@@ -624,11 +696,12 @@ export class WahooProviderService
       );
       const { workouts, total } = workoutList(response);
       for (const workout of workouts) {
+        // The API sorts by starts descending, including workouts without a summary.
+        const starts = workout.starts ? Date.parse(workout.starts) : NaN;
+        if (starts < startDate.getTime()) return activities;
+        if (starts > endDate.getTime()) continue;
         const activity = this.toImportedActivity(workout, account.athleteId);
         if (!activity) continue;
-        if (activity.startDate > endDate) continue;
-        if (activity.startDate < startDate)
-          return activities.slice(0, options?.limit);
         activities.push(activity);
         if (options?.limit && activities.length >= options.limit)
           return activities;

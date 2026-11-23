@@ -22,7 +22,11 @@ import {
   setOauthConnectSourceForRedirect,
 } from '@/utils/analytics-events';
 import { connectorProviderLabelMap } from '@/utils/label-map/core/connector-provider.label-map';
-import { openOAuthUrl, rememberWahooLogin } from '@/utils/oauth';
+import {
+  openOAuthUrl,
+  rememberWahooLogin,
+  wahooConnectionQuotaMessage,
+} from '@/utils/oauth';
 import { CheckCircle2, Link2, Link2Off } from 'lucide-react';
 import { usePostHog } from 'posthog-js/react';
 import { useState } from 'react';
@@ -92,7 +96,10 @@ export function ConnectorsList({
       await openOAuthUrl(response.uri);
     },
     onError: (error) => {
-      toast.error(error.message || m.failed_to_initiate_connection());
+      toast.error(
+        wahooConnectionQuotaMessage(error) ??
+          (error.message || m.failed_to_initiate_connection()),
+      );
     },
   });
 

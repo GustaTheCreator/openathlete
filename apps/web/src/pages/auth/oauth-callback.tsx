@@ -10,6 +10,7 @@ import {
 import {
   ENABLE_DESCRIPTION_AFTER_OAUTH_KEY,
   consumeWahooLogin,
+  wahooConnectionQuotaMessage,
 } from '@/utils/oauth';
 import { useQueryClient } from '@tanstack/react-query';
 import posthog from 'posthog-js';
@@ -76,7 +77,7 @@ export function OAuthCallbackPage() {
         source,
         error_code: analyticsErrorCodeFromUnknown(error),
       });
-      toast.error(error.message);
+      toast.error(wahooConnectionQuotaMessage(error) ?? error.message);
       nav(getPath(['dashboard', 'settings']));
     },
   });
