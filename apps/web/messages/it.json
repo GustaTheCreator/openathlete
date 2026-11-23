@@ -2363,6 +2363,7 @@
   "player_log_title": "Serie fatte",
   "player_log_skipped": "saltata",
   "player_log_rounds": "AMRAP: {count} giri",
+  "wahoo_connection_rate_limited": "È stato raggiunto il limite di richieste Wahoo. Riprova a collegare il tuo account tra circa {minutes} min.",
   "wahoo_disconnect_remote_pending": "La sincronizzazione locale è disattivata. Rimuovi questa app dal tuo account Wahoo per completare la disconnessione.",
   "footer_privacy": "Privacy",
   "footer_source": "Codice sorgente",

@@ -1,6 +1,6 @@
 # Context
 
-Updated: 2026-11-21
+Updated: 2026-11-23
 
 ## Cycling computer integrations
 
@@ -17,6 +17,8 @@ including Garmin's 31-day backfill and Polar's 30-day post-connection feed.
 Regular Wahoo sync still covers the last seven days. Repeated requests and
 concurrent imports from connected providers use existing activity IDs and
 cross-provider duplicate detection.
+
+Wahoo account association shares the provider app quota with background sync. The connector preserves capacity for association and shares upstream reset times across API and worker processes.
 
 ## Product features
 

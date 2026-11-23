@@ -101,7 +101,11 @@ function buildService() {
       },
     ),
   };
-  const queue = { addActivityImportJobs: jest.fn() };
+  const queue = {
+    addActivityImportJobs: jest.fn(),
+    getWahooQuotaDelay: jest.fn().mockResolvedValue(0),
+    pauseWahooRequests: jest.fn().mockResolvedValue(undefined),
+  };
   const config = {
     get: (key: string) =>
       ({ WAHOO_CLIENT_ID: 'client-id', APP_URL: 'https://example.test' })[key],
@@ -162,6 +166,104 @@ describe('WahooProviderService', () => {
       expect.objectContaining({ oauthCodeVerifier: 'v'.repeat(43) }),
     );
     expect(prisma.providerAccount.update).not.toHaveBeenCalled();
+  });
+
+  it('reserves the last daily requests for association when background work runs low', async () => {
+    const { service, queue } = buildService();
+    axiosMock.request.mockResolvedValueOnce({
+      data: { ok: true },
+      headers: {
+        'x-ratelimit-remaining': '8, 80, 20',
+        'x-ratelimit-reset': '0',
+        date: 'Mon, 23 Nov 2026 22:00:00 GMT',
+      },
+    } as never);
+    await service.makeApiRequest(makeAccount(), 'GET', '/v1/workouts');
+
+    expect(queue.pauseWahooRequests).toHaveBeenCalledWith(
+      'background',
+      7_200_000,
+    );
+    queue.getWahooQuotaDelay.mockImplementation(async (scope) =>
+      scope === 'background' ? 50_000 : 0,
+    );
+    await expect(
+      service.makeApiRequest(makeAccount(), 'GET', '/v1/workouts'),
+    ).rejects.toMatchObject({
+      name: 'ProviderRateLimitError',
+      retryAfterMs: 50_000,
+    });
+    await expect(service.assertCanConnect()).resolves.toBeUndefined();
+    expect(axiosMock.request).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares the Wahoo reset across requests and stops association before issuing another token', async () => {
+    const { service, queue } = buildService();
+    axiosMock.request.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 429, headers: { 'x-ratelimit-reset': '6586' } },
+    });
+    await expect(
+      service.makeApiRequest(makeAccount(), 'GET', '/v1/workouts'),
+    ).rejects.toMatchObject({
+      name: 'ProviderRateLimitError',
+      retryAfterMs: 6_586_000,
+    });
+    expect(queue.pauseWahooRequests).toHaveBeenCalledWith('all', 6_586_000);
+
+    queue.getWahooQuotaDelay.mockResolvedValue(6_585_001);
+    await expect(
+      service.connect('code', 'v'.repeat(43), 8),
+    ).rejects.toMatchObject({
+      status: 429,
+      response: { code: 'WAHOO_RATE_LIMITED', retryAfterSeconds: 6586 },
+    });
+    expect(axiosMock.post).not.toHaveBeenCalled();
+  });
+
+  it('returns a usable 429 when the profile lookup first discovers the limit', async () => {
+    const { service, queue } = buildService();
+    axiosMock.post.mockResolvedValueOnce({
+      data: {
+        access_token: 'access',
+        refresh_token: 'refresh',
+        expires_in: 3600,
+      },
+    } as never);
+    axiosMock.get.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 429, headers: { 'x-ratelimit-reset': '300' } },
+    });
+    await expect(
+      service.connect('code', 'v'.repeat(43), 8),
+    ).rejects.toMatchObject({
+      status: 429,
+      response: { code: 'WAHOO_RATE_LIMITED', retryAfterSeconds: 300 },
+    });
+    expect(queue.pauseWahooRequests).toHaveBeenCalledWith('all', 300_000);
+  });
+
+  it('stops the recent activity scan when an old workout has no summary', async () => {
+    const { service } = buildService();
+    const request = jest
+      .spyOn(service, 'makeApiRequest')
+      .mockResolvedValueOnce({
+        workouts: Array.from({ length: 30 }, (_, index) => ({
+          id: index + 1,
+          starts: '2026-11-10T10:00:00Z',
+          workout_summary: null,
+        })),
+        total: 700,
+      });
+    request.mockResolvedValueOnce({ workouts: [], total: 700 });
+
+    await expect(
+      service.importActivities(makeAccount(), {
+        startDate: new Date('2026-11-20T00:00:00Z'),
+        endDate: new Date('2026-11-23T00:00:00Z'),
+      }),
+    ).resolves.toEqual([]);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it('uses the stored PKCE verifier to refresh under a database lock, then persists the rotated pair', async () => {

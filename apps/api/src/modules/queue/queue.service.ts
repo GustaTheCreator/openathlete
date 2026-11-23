@@ -66,6 +66,14 @@ export type CorosSyncJobData =
 
 const POLAR_WEBHOOK_SECRET_KEY = 'openathlete:polar:webhook-secret';
 
+const WAHOO_QUOTA_KEY = 'openathlete:wahoo:{quota}';
+const WAHOO_QUOTA_DELAY = `return math.max(0, redis.call('PTTL', KEYS[1]), redis.call('PTTL', KEYS[2]))`;
+const WAHOO_QUOTA_PAUSE = `local delay = tonumber(ARGV[1])
+if redis.call('PTTL', KEYS[1]) < delay then
+  redis.call('PSETEX', KEYS[1], delay, '1')
+end
+return 1`;
+
 const WAHOO_OAUTH_CONSUME = `local value = redis.call('GET', KEYS[1])
 if not value then return 0 end
 local login = cjson.decode(value)
@@ -116,6 +124,33 @@ export class QueueService {
     @InjectQueue('strava-description')
     private readonly stravaDescriptionQueue: Queue<StravaDescriptionJobData>,
   ) {}
+
+  async getWahooQuotaDelay(scope: 'all' | 'background'): Promise<number> {
+    const redis = await this.activityImportQueue.client;
+    redis.defineCommand('wahooQuotaDelay', {
+      numberOfKeys: 2,
+      lua: WAHOO_QUOTA_DELAY,
+    });
+    return redis.runCommand('wahooQuotaDelay', [
+      WAHOO_QUOTA_KEY + ':all',
+      WAHOO_QUOTA_KEY + ':' + scope,
+    ]);
+  }
+
+  async pauseWahooRequests(
+    scope: 'all' | 'background',
+    delayMs: number,
+  ): Promise<void> {
+    const redis = await this.activityImportQueue.client;
+    redis.defineCommand('wahooQuotaPause', {
+      numberOfKeys: 1,
+      lua: WAHOO_QUOTA_PAUSE,
+    });
+    await redis.runCommand('wahooQuotaPause', [
+      WAHOO_QUOTA_KEY + ':' + scope,
+      Math.ceil(delayMs),
+    ]);
+  }
 
   async rememberWahooOAuth(
     state: string,

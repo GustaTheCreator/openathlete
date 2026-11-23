@@ -2363,6 +2363,7 @@
   "player_log_title": "Sets done",
   "player_log_skipped": "skipped",
   "player_log_rounds": "AMRAP: {count} rounds",
+  "wahoo_connection_rate_limited": "Wahoo has reached its connection limit. Try connecting again in about {minutes} min.",
   "wahoo_disconnect_remote_pending": "Local sync is off. Remove this app from your Wahoo account to finish disconnecting.",
   "footer_privacy": "Privacy",
   "footer_source": "Source code",

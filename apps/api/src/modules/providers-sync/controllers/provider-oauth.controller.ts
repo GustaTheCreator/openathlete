@@ -218,6 +218,7 @@ export class ProviderOAuthController {
     description:
       'PROVIDER_NOT_CONFIGURED - the connector is not set up on this instance',
   })
+  @ApiResponse({ status: 429, description: 'Wahoo API quota is exhausted' })
   async getAuthorizationUri(
     @Param('provider') provider: string,
     @Query('region') region?: string,
@@ -248,6 +249,7 @@ export class ProviderOAuthController {
         return { uri: this.polarProviderService.getAuthorizationUri() };
       case ConnectorProvider.WAHOO: {
         if (!user) throw new UnauthorizedException();
+        await this.wahooProviderService.assertCanConnect();
         const login = this.wahooProviderService.getAuthorizationUriWithPKCE();
         await this.queueService.rememberWahooOAuth(
           login.state,
@@ -347,6 +349,7 @@ export class ProviderOAuthController {
     status: 404,
     description: 'Not found - athlete not found for user',
   })
+  @ApiResponse({ status: 429, description: 'Wahoo API quota is exhausted' })
   async connectProvider(
     @JwtUser() user: AuthUser,
     @Param('provider') provider: string,

@@ -1,6 +1,29 @@
+import { m } from '@/paraglide/messages';
 import { Browser } from '@capacitor/browser';
+import { isAxiosError } from 'axios';
 
 import { isCapacitor } from './capacitor';
+
+export function wahooConnectionQuotaMessage(
+  error: unknown,
+): string | undefined {
+  if (!isAxiosError<{ code?: string; retryAfterSeconds?: number }>(error))
+    return undefined;
+
+  const response = error.response;
+  const retryAfter = response?.data?.retryAfterSeconds;
+  if (
+    response?.status === 429 &&
+    response.data?.code === 'WAHOO_RATE_LIMITED' &&
+    typeof retryAfter === 'number' &&
+    Number.isFinite(retryAfter) &&
+    retryAfter > 0
+  ) {
+    return m.wahoo_connection_rate_limited({
+      minutes: Math.ceil(retryAfter / 60),
+    });
+  }
+}
 
 /**
  * Open a URL for OAuth flow, using Capacitor Browser in native or window.open in web
