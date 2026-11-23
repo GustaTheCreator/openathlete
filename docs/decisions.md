@@ -37,3 +37,5 @@
 2026-11-21 — Disable built-in AI and external AI agent access in the application — coaches and athletes do not use those features, and the existing data is retained.
 
 2026-11-23 — Reserve Wahoo API capacity for account association and share upstream cooldowns through Redis — historical imports can otherwise consume the app-wide quota used by both workout sync and OAuth profile lookups.
+
+2026-11-23 — Let OpenAthlete localize the web app without browser page translation — translators can replace React-owned text nodes and crash navigation, including in an installed PWA.

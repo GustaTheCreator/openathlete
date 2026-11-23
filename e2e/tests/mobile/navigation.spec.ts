@@ -8,6 +8,11 @@ test('moves between the tabs of the app', async ({ page }) => {
   await page.goto('/dashboard');
 
   await expect(page).toHaveURL(/\/dashboard\/today/);
+  await expect(page.locator('html')).toHaveAttribute('translate', 'no');
+  await expect(page.locator('head meta[name="google"]')).toHaveAttribute(
+    'content',
+    'notranslate',
+  );
   const tab = (id: string) => page.locator(`[data-app-tab="${id}"]`);
 
   await tab('calendar').tap();
