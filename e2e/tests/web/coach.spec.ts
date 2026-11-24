@@ -9,8 +9,6 @@ import { signIn } from '../../support/browser';
 import { API_URL } from '../../support/env';
 import { trackPageProblems } from '../../support/page-health';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 // The browser remembers the coach space, as after switching to it once
 async function signInAsCoach(page: Page, coach: TestUser) {
   await signIn(page, coach);

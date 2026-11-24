@@ -10,7 +10,6 @@ import { trackPageProblems } from '../../support/page-health';
 // the session and the activity can sit on two rows, the second one below
 // the fold of a 720-pixel window (a Sunday session run on Monday)
 test.use({
-  storageState: { cookies: [], origins: [] },
   viewport: { width: 1280, height: 1400 },
 });
 

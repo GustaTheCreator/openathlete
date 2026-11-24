@@ -6,8 +6,6 @@ import { trackPageProblems } from '../../support/page-health';
 
 // A fresh athlete: sign-up gave them the five default heart-rate zones in bpm,
 // and onboarding saved a maximum HR of 190 and a resting HR of 50.
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('sets heart-rate zones from the heart-rate reserve', async ({
   page,
   request,

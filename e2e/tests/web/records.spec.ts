@@ -6,8 +6,6 @@ import { API_URL } from '../../support/env';
 import { trackPageProblems } from '../../support/page-health';
 import { importRunWithRecords } from '../../support/records';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('reads records across the years, and excludes an effort', async ({
   page,
   request,

@@ -5,8 +5,6 @@ import { createAthlete } from '../../support/api';
 import { signIn } from '../../support/browser';
 import { trackPageProblems } from '../../support/page-health';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('an activity page fits a phone', async ({ page, request }) => {
   const athlete = await createAthlete(request);
   const { eventId } = await importRecentRun(request, athlete, 'RUNNING', 1, 30);

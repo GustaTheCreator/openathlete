@@ -9,8 +9,6 @@ import {
   waitForIntensity,
 } from '../../support/training';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 const VIEWS = [
   '',
   'view=load',

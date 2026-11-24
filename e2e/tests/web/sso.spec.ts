@@ -5,8 +5,6 @@ import { createAthlete } from '../../support/api';
 import { WEB_URL } from '../../support/env';
 
 // The E2E stack signs in through fake-oidc (see fake-oidc/server.mjs)
-test.use({ storageState: { cookies: [], origins: [] } });
-
 async function signInWithSso(page: Page, email: string) {
   await page.goto('/auth/login');
   await page.locator('[data-oidc-sign-in]').click();

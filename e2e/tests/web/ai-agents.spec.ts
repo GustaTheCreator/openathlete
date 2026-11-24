@@ -4,8 +4,6 @@ import { apiHeaders, createAthlete } from '../../support/api';
 import { signIn } from '../../support/browser';
 import { API_URL } from '../../support/env';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('external AI agents and their settings are unavailable', async ({
   page,
   request,

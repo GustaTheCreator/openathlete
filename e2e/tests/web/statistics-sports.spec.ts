@@ -15,8 +15,6 @@ import {
   waitForIntensity,
 } from '../../support/training';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 /** Easy 65 minutes at a steady heart rate, drifting a little */
 const steadyHeartrate = (minute: number) => 125 + minute * 0.08;
 /** A hard outing: up to the top zones */

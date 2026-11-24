@@ -5,8 +5,6 @@ import { signIn } from '../../support/browser';
 import { API_URL } from '../../support/env';
 import { trackPageProblems } from '../../support/page-health';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 const todayKey = () => {
   const now = new Date(
     new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }),

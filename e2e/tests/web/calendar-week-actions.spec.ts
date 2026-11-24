@@ -5,8 +5,6 @@ import { signIn } from '../../support/browser';
 import { API_URL } from '../../support/env';
 import { trackPageProblems } from '../../support/page-health';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 const DAY = 24 * 3600 * 1000;
 
 /** A session on `day` (local to the browser), mid-day so it stays that day */

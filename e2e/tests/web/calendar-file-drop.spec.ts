@@ -6,8 +6,6 @@ import { createAthlete } from '../../support/api';
 import { signIn } from '../../support/browser';
 import { trackPageProblems } from '../../support/page-health';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 const GPX = readFileSync(
   path.join(import.meta.dirname, '../../fixtures/synthetic-run.gpx'),
   'utf8',

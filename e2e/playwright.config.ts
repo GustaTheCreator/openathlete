@@ -3,6 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 import { WEB_URL } from './support/env';
 
 const isCI = Boolean(process.env.CI);
+const webOrigin = new URL(WEB_URL);
 
 export default defineConfig({
   globalSetup: './global-setup.ts',
@@ -28,6 +29,28 @@ export default defineConfig({
   use: {
     baseURL: WEB_URL,
     locale: 'en-US',
+    // Most specs assert English copy and start signed out. The defaults
+    // tests explicitly request a context without saved preferences.
+    storageState: {
+      cookies: [
+        {
+          name: 'OA_LOCALE',
+          value: 'en',
+          domain: webOrigin.hostname,
+          path: '/',
+          expires: -1,
+          httpOnly: false,
+          secure: webOrigin.protocol === 'https:',
+          sameSite: 'Lax',
+        },
+      ],
+      origins: [
+        {
+          origin: webOrigin.origin,
+          localStorage: [{ name: 'theme', value: 'light' }],
+        },
+      ],
+    },
     timezoneId: 'America/New_York',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',

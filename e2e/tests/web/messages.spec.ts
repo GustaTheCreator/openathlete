@@ -4,8 +4,6 @@ import { apiHeaders, createAthlete } from '../../support/api';
 import { signIn } from '../../support/browser';
 import { API_URL } from '../../support/env';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 // The page starts a first conversation for a user who has none; an empty
 // "Unread" view must not count as none
 test('the unread filter creates no conversation', async ({ page, request }) => {

@@ -4,8 +4,6 @@ import { createAthlete } from '../../support/api';
 import { signIn } from '../../support/browser';
 import { trackPageProblems } from '../../support/page-health';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('an activity done without a device is logged from the day menu', async ({
   page,
   request,

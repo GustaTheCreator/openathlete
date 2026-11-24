@@ -39,3 +39,5 @@
 2026-11-23 — Reserve Wahoo API capacity for account association and share upstream cooldowns through Redis — historical imports can otherwise consume the app-wide quota used by both workout sync and OAuth profile lookups.
 
 2026-11-23 — Let OpenAthlete localize the web app without browser page translation — translators can replace React-owned text nodes and crash navigation, including in an installed PWA.
+
+2026-11-24 — Default the OpenAthlete web app to Brazilian Portuguese and dark mode — start new browser and PWA sessions with the requested defaults while honoring saved display choices.
