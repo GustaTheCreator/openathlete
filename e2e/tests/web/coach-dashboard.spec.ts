@@ -4,8 +4,6 @@ import { createAthlete, linkCoach } from '../../support/api';
 import { signIn } from '../../support/browser';
 import { trackPageProblems } from '../../support/page-health';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('the coach dashboard flags athletes to watch and fits the screen', async ({
   page,
   request,

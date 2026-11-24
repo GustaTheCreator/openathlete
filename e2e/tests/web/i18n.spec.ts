@@ -28,6 +28,30 @@ for (const [locale, calendar] of [
 test.describe('signed out', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
+  test('starts in Brazilian Portuguese and dark even on a light device', async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.goto('/auth/login');
+
+    await expect(page.locator('html')).toHaveAttribute('lang', 'pt-BR');
+    await expect(
+      page.getByRole('button', { name: 'Entrar', exact: true }),
+    ).toBeVisible();
+    await expect(page.locator('html')).toHaveClass(/\bdark\b/);
+  });
+
+  test('honors a saved language and light theme', async ({ page, context }) => {
+    await context.addCookies([
+      { name: 'OA_LOCALE', value: 'fr', url: WEB_URL },
+    ]);
+    await page.addInitScript(() => localStorage.setItem('theme', 'light'));
+    await page.goto('/auth/login');
+
+    await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
+    await expect(page.locator('html')).toHaveClass(/\blight\b/);
+  });
+
   // Another site under the same parent domain can leave a PARAGLIDE_LOCALE
   // cookie for every subdomain, listed before the app's own. A longer path
   // puts this one first the same way on localhost.

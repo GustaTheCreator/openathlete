@@ -6,8 +6,6 @@ import { signIn } from '../../support/browser';
 import { API_URL } from '../../support/env';
 import { trackPageProblems } from '../../support/page-health';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('edits an activity over its details: equipment, race, then deletion', async ({
   page,
   request,

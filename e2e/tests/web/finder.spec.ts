@@ -4,8 +4,6 @@ import { importRecentRun } from '../../support/activities';
 import { createAthlete, createCoachWithAthlete } from '../../support/api';
 import { signIn } from '../../support/browser';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('an athlete finds an activity and a page, not someone else', async ({
   page,
   request,

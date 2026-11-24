@@ -5,8 +5,6 @@ import { signIn } from '../../support/browser';
 import { API_URL } from '../../support/env';
 import { trackPageProblems } from '../../support/page-health';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 /** Monday of the week after this one, in the browser's time zone */
 function nextMonday() {
   const now = new Date(

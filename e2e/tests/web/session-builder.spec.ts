@@ -5,8 +5,6 @@ import { signIn } from '../../support/browser';
 import { API_URL } from '../../support/env';
 import { trackPageProblems } from '../../support/page-health';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 async function planTraining(page: Page) {
   await page.goto('/dashboard/calendar');
   const day = page.locator('[data-calendar-day]').nth(9);

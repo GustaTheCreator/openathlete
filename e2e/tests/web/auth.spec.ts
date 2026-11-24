@@ -6,8 +6,6 @@ import { signIn } from '../../support/browser';
 import { API_URL } from '../../support/env';
 
 // These tests start logged out
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('explains the password rule on sign up', async ({ page }) => {
   await page.goto('/auth/create-account');
   await page.fill('input[name="email"]', 'too-short@example.com');

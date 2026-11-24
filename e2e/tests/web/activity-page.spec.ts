@@ -5,8 +5,6 @@ import { createAthlete, createCoachWithAthlete } from '../../support/api';
 import { signIn } from '../../support/browser';
 import { trackPageProblems } from '../../support/page-health';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('opens an activity as its own page from the calendar', async ({
   page,
   request,

@@ -5,8 +5,6 @@ import { signIn } from '../../support/browser';
 import { trackPageProblems } from '../../support/page-health';
 import { importRunWithRecords } from '../../support/records';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('crops an activity to a part, then gets the recording back', async ({
   page,
   request,

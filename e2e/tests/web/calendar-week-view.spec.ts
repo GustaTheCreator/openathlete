@@ -4,8 +4,6 @@ import { createAthlete } from '../../support/api';
 import { signIn } from '../../support/browser';
 
 // The view is saved with the account: an account of its own leaves others alone
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('switches to week view, navigates, and remembers the selected view', async ({
   page,
   request,

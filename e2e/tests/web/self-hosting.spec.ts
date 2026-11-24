@@ -77,7 +77,7 @@ authTest(
 test('signs in without a Google button on a bare instance', async ({
   browser,
 }) => {
-  const context = await browser.newContext({ storageState: undefined });
+  const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto('/auth/login');
   await expect(page.locator('input[name="email"]')).toBeVisible();
@@ -86,7 +86,7 @@ test('signs in without a Google button on a bare instance', async ({
 });
 
 test('explains how to reset a password without email', async ({ browser }) => {
-  const context = await browser.newContext({ storageState: undefined });
+  const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto('/auth/password-reset-request');
 

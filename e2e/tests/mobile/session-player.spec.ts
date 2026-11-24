@@ -5,8 +5,6 @@ import { signIn } from '../../support/browser';
 import { trackPageProblems } from '../../support/page-health';
 import { planStrengthSession } from '../../support/strength';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('the player fills the phone screen and resumes after a reload', async ({
   page,
   request,

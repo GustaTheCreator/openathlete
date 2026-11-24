@@ -7,8 +7,6 @@ import { signIn } from '../../support/browser';
 import { API_URL } from '../../support/env';
 import { trackPageProblems } from '../../support/page-health';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 // A synthetic 10-minute run with heart rate and altitude, on 2 May 2024
 const GPX = readFileSync(
   path.join(import.meta.dirname, '../../fixtures/synthetic-run.gpx'),

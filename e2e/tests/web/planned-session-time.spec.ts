@@ -4,8 +4,6 @@ import { apiHeaders, createAthlete } from '../../support/api';
 import { signIn } from '../../support/browser';
 import { API_URL } from '../../support/env';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 // A start time set through MCP used to be hidden in the web app, and reset
 // to 12:00 when the session was moved to another day (#119)
 test('a planned session keeps its start time when moved to another day', async ({

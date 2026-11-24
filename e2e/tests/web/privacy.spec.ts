@@ -3,8 +3,6 @@ import { expect, test } from '@playwright/test';
 import { createAthlete } from '../../support/api';
 import { signIn } from '../../support/browser';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('downloads the account data from the settings', async ({
   page,
   request,

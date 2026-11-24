@@ -5,8 +5,6 @@ import { createAthlete } from '../../support/api';
 import { signIn } from '../../support/browser';
 import { trackPageProblems } from '../../support/page-health';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('statistics read the last weeks, by section, with filters in the URL', async ({
   page,
   request,

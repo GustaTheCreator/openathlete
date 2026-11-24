@@ -6,8 +6,6 @@ import { API_URL } from '../../support/env';
 import { trackPageProblems } from '../../support/page-health';
 import { planStrengthSession } from '../../support/strength';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('a strength session is played to the end and becomes its activity', async ({
   page,
   request,

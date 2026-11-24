@@ -4,8 +4,6 @@ import { createAthlete } from '../../support/api';
 import { signIn } from '../../support/browser';
 import { importRunWithRecords } from '../../support/records';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('the records page fits a phone screen', async ({ page, request }) => {
   const athlete = await createAthlete(request);
   await importRunWithRecords(request, athlete);

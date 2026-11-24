@@ -5,8 +5,6 @@ import { signIn } from '../../support/browser';
 import { API_URL } from '../../support/env';
 import { trackPageProblems } from '../../support/page-health';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('the coach sees an unread comment on a session, reads it and replies', async ({
   page,
   request,

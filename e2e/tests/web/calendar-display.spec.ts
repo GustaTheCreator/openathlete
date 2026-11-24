@@ -5,8 +5,6 @@ import { signIn } from '../../support/browser';
 import { API_URL } from '../../support/env';
 import { trackPageProblems } from '../../support/page-health';
 
-test.use({ storageState: { cookies: [], origins: [] } });
-
 test('sessions show their workout profile, and the display settings follow the account', async ({
   page,
   request,

@@ -259,7 +259,9 @@ describe('CorosProviderService', () => {
 
   it('spreads the history over days, within the file quota', async () => {
     const { service, queue } = buildService();
-    const recentDate = new Date().toISOString().slice(0, 10);
+    const recentDate = new Date(Date.now() - 24 * 3_600_000)
+      .toISOString()
+      .slice(0, 10);
     const records = Array.from(
       { length: 95 },
       (_, index) =>
